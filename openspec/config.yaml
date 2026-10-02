@@ -1,32 +1,39 @@
+# openspec/config.yaml
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Domain: A self contained streaming application, based on Kafka, that runs locally in Docker and for demonstrating various real time data streaming concepts.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack:
+  - Operations: AKHQ for Kafka admin, Grafana for metrics and health dashboarding.
+  - Backend: Java
+  - Streaming: Kafka, Kafka Streams
+  - Database: Postgres
+  - Dev runtime: Docker compose running on local machine.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Project conventions:
+  - The system starts up and tears down with Docker Compose commands. 
+  - Components needs to be able to communicate to each other on the local machine. 
+  - All components run in Docker.
+  - Components that host web apps need to be reachable on localhost.
+  - Documentation included should simply tell the user basic reference information and step by step instructions for startup, teardown, and performing tasks.
+
+  Task conventions:
+  - Group tasks under `## N. Group Name` headings.
+  - Every task must be a checkbox in the form `- [ ] N.M Task description`.
+  - Each task must be small, focused, reference the relevant spec scenario, and sequence: tests → implementation → refactor.
+  - Check off tasks as you complete them one-by-one or a section at a time.
+
+rules:
+  proposal:
+    - Include rollback plan
+    - Include how to know if the feature/change is working correctly.
+  specs:
+    - Use Given/When/Then format
+    - Reference existing patterns before inventing new ones
+
+operations:
+  apply:
+    guidance:
+      - Do not run docker commands without permission from user.
+      - Prefer small, focused diffs; keep each implementation change under ~100 lines when possible.
