@@ -1,0 +1,10 @@
+lowercaseOutputName: true
+includeObjectNames:
+  - "kafka.schema.registry:type=jersey-metrics"
+rules:
+  - pattern: "kafka.schema.registry<type=jersey-metrics><>request-rate"
+    name: kafka_schema_registry_jersey_request_rate
+    type: GAUGE
+  - pattern: "kafka.schema.registry<type=jersey-metrics><>request-error-rate"
+    name: kafka_schema_registry_jersey_request_error_rate
+    type: GAUGE

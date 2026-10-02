@@ -1,0 +1,185 @@
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - streaming
+
+x-broker-ready: &broker-ready
+  broker:
+    condition: service_healthy
+
+x-registry-ready: &registry-ready
+  schema-registry:
+    condition: service_healthy
+
+services:
+  broker:
+    <<: *service-defaults
+    image: local/gotogether-kafka:8.1.6-1.6.0
+    build:
+      context: .
+      dockerfile: Dockerfile.jmx
+      args:
+        CONFLUENT_IMAGE: confluentinc/cp-kafka:8.1.6
+    hostname: broker
+    mem_limit: 1g
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://broker:29092,EXTERNAL://127.0.0.1:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms512M -Xmx512M
+      KAFKA_OPTS: -javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9404:/etc/jmx/kafka.yml
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ./monitoring/kafka-jmx.yml:/etc/jmx/kafka.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_OPTS= kafka-topics --bootstrap-server broker:29092 --list >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  schema-registry:
+    <<: *service-defaults
+    image: local/gotogether-schema-registry:8.1.6-1.6.0
+    build:
+      context: .
+      dockerfile: Dockerfile.jmx
+      args:
+        CONFLUENT_IMAGE: confluentinc/cp-schema-registry:8.1.6
+    hostname: schema-registry
+    mem_limit: 512m
+    depends_on: *broker-ready
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://broker:29092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      SCHEMA_REGISTRY_HEAP_OPTS: -Xms256M -Xmx256M
+      SCHEMA_REGISTRY_JMX_OPTS: -javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9405:/etc/jmx/schema-registry.yml
+    volumes:
+      - ./monitoring/schema-registry-jmx.yml:/etc/jmx/schema-registry.yml:ro
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  topic-bootstrap:
+    image: confluentinc/cp-kafka:8.1.6
+    entrypoint: ["kafka-topics"]
+    command:
+      - --bootstrap-server
+      - broker:29092
+      - --create
+      - --if-not-exists
+      - --topic
+      - cnc-demo-records
+      - --partitions
+      - "1"
+      - --replication-factor
+      - "1"
+      - --config
+      - retention.ms=86400000
+    depends_on: *broker-ready
+    restart: "no"
+    networks:
+      - streaming
+
+  schema-bootstrap:
+    image: python:3.13.7-slim
+    command: ["python", "/scripts/register_schema.py"]
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+      topic-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SCHEMA_PATH: /schema/cnc-demo-records.schema.json
+    volumes:
+      - ./scripts/register_schema.py:/scripts/register_schema.py:ro
+      - ./schemas/cnc-demo-records.schema.json:/schema/cnc-demo-records.schema.json:ro
+    restart: "no"
+    networks:
+      - streaming
+
+  akhq:
+    <<: *service-defaults
+    image: tchiotludo/akhq:0.28.0
+    mem_limit: 512m
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      JAVA_OPTS: -Xms128M -Xmx256M
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            local:
+              properties:
+                bootstrap.servers: broker:29092
+              schema-registry:
+                url: http://schema-registry:8081
+
+  prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:v3.14.0
+    mem_limit: 512m
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=512MB
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    <<: *service-defaults
+    image: grafana/grafana:13.0.9
+    mem_limit: 512m
+    depends_on:
+      prometheus:
+        condition: service_started
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  kafka_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  streaming:
+    driver: bridge

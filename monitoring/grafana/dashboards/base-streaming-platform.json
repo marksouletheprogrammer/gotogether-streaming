@@ -1,0 +1,82 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [{"expr": "up{job=\"kafka-broker\"}", "refId": "A"}],
+      "title": "Kafka broker availability",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "A zero rate means the broker is up and the cumulative byte counter did not grow during the selected window. Missing telemetry is shown as No data; use the Kafka availability panel to distinguish a down scrape target.",
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [
+        {"expr": "rate(kafka_server_broker_topic_metrics_bytes_in_total[5m])", "legendFormat": "in", "refId": "A"},
+        {"expr": "rate(kafka_server_broker_topic_metrics_bytes_out_total[5m])", "legendFormat": "out", "refId": "B"}
+      ],
+      "title": "Kafka throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 6},
+      "id": 3,
+      "targets": [{"expr": "kafka_network_request_metrics_request_total_time_ms_mean", "refId": "A"}],
+      "title": "Kafka request latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 6},
+      "id": 4,
+      "targets": [{"expr": "kafka_server_under_replicated_partitions", "refId": "A"}],
+      "title": "Kafka under-replicated partitions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 12},
+      "id": 5,
+      "targets": [{"expr": "up{job=\"schema-registry\"}", "refId": "A"}],
+      "title": "Schema Registry availability",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 12},
+      "id": 6,
+      "targets": [{"expr": "kafka_schema_registry_jersey_request_rate", "refId": "A"}],
+      "title": "Schema Registry requests per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 18},
+      "id": 7,
+      "targets": [{"expr": "kafka_schema_registry_jersey_request_error_rate", "refId": "A"}],
+      "title": "Schema Registry request errors per second",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["kafka", "schema-registry"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "Base Streaming Platform",
+  "uid": "base-streaming-platform",
+  "version": 1
+}

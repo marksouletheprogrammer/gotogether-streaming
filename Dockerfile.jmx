@@ -1,0 +1,8 @@
+ARG CONFLUENT_IMAGE=confluentinc/cp-kafka:8.1.6
+
+FROM python:3.13.7-slim AS jmx-agent
+COPY scripts/download_jmx_exporter.py /tmp/download_jmx_exporter.py
+RUN python /tmp/download_jmx_exporter.py
+
+FROM ${CONFLUENT_IMAGE}
+COPY --from=jmx-agent /opt/jmx_prometheus_javaagent-1.6.0.jar /usr/share/java/jmx_prometheus_javaagent-1.6.0.jar

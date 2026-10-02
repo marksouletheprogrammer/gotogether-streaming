@@ -1,0 +1,20 @@
+lowercaseOutputName: true
+includeObjectNames:
+  - "kafka.server:type=BrokerTopicMetrics,*"
+  - "kafka.server:type=ReplicaManager,*"
+  - "kafka.network:type=RequestMetrics,*"
+rules:
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec.*><>Count"
+    name: kafka_server_broker_topic_metrics_bytes_in_total
+    type: COUNTER
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec.*><>Count"
+    name: kafka_server_broker_topic_metrics_bytes_out_total
+    type: COUNTER
+  - pattern: "kafka.server<type=ReplicaManager, name=UnderReplicatedPartitions><>Value"
+    name: kafka_server_under_replicated_partitions
+    type: GAUGE
+  - pattern: "kafka.network<type=RequestMetrics, name=TotalTimeMs, request=(.+)><>Mean"
+    name: kafka_network_request_metrics_request_total_time_ms_mean
+    type: GAUGE
+    labels:
+      request: "$1"

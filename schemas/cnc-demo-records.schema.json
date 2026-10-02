@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Simulated CNC milling demo record",
+  "description": "Illustrative per-cut demo contract, not a machine-vendor or standards schema.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "kind",
+    "occurred_at",
+    "machine_id",
+    "tool_instance_id",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "demo-1"
+    },
+    "event_id": {
+      "$ref": "#/$defs/id",
+      "description": "Stable record ID for replay/deduplication."
+    },
+    "kind": {
+      "enum": [
+        "cut",
+        "event",
+        "assessment"
+      ]
+    },
+    "occurred_at": {
+      "$ref": "#/$defs/timestamp",
+      "description": "Source event time, UTC in the examples."
+    },
+    "machine_id": {
+      "const": "mill-1"
+    },
+    "tool_instance_id": {
+      "$ref": "#/$defs/id",
+      "description": "Physical cutter ID, not tool slot number."
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "kind": {
+          "const": "cut"
+        },
+        "payload": {
+          "$ref": "#/$defs/cut"
+        }
+      }
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "event"
+        },
+        "payload": {
+          "$ref": "#/$defs/event"
+        }
+      }
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "assessment"
+        },
+        "payload": {
+          "$ref": "#/$defs/assessment"
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cut": {
+      "type": "object",
+      "required": [
+        "cut_index",
+        "vibration_rms_g",
+        "spindle_current_a",
+        "coolant_flow_l_min"
+      ],
+      "properties": {
+        "cut_index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Completed cuts for this tool instance, starting at 1."
+        },
+        "vibration_rms_g": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cutting-phase vibration root-mean-square acceleration in g."
+        },
+        "spindle_current_a": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Mean spindle motor current over this cut, amperes."
+        },
+        "coolant_flow_l_min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Mean coolant flow over this cut, liters per minute."
+        }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "event_type"
+      ],
+      "properties": {
+        "event_type": {
+          "enum": [
+            "tool_installed",
+            "inspection",
+            "maintenance"
+          ]
+        },
+        "cut_index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Most recent completed cut for this tool, when applicable."
+        },
+        "component": {
+          "enum": [
+            "cutter",
+            "coolant_system"
+          ],
+          "description": "Component inspected or serviced."
+        },
+        "confirmed_fault": {
+          "enum": [
+            "none",
+            "chipped_cutter",
+            "low_coolant_flow",
+            "unknown"
+          ],
+          "description": "Technician finding; unknown is not a negative training label."
+        },
+        "planned": {
+          "type": "boolean",
+          "description": "Whether maintenance was scheduled; relevant only to maintenance."
+        },
+        "replacement_tool_instance_id": {
+          "$ref": "#/$defs/id",
+          "description": "New cutter if this event replaces the old one."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "inspection"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "component",
+              "confirmed_fault"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "maintenance"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "component",
+              "confirmed_fault",
+              "planned"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "assessment": {
+      "type": "object",
+      "required": [
+        "task",
+        "as_of",
+        "cut_index",
+        "based_on_event_id",
+        "result"
+      ],
+      "properties": {
+        "task": {
+          "enum": [
+            "anomaly",
+            "diagnosis",
+            "forecast"
+          ]
+        },
+        "as_of": {
+          "$ref": "#/$defs/timestamp",
+          "description": "Latest allowed input time; never use future inspections/maintenance."
+        },
+        "cut_index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Cut on which this assessment was made."
+        },
+        "based_on_event_id": {
+          "$ref": "#/$defs/id",
+          "description": "ID of the assessed cut record."
+        },
+        "result": {
+          "enum": [
+            "normal",
+            "unusual",
+            "chipped_cutter",
+            "low_coolant_flow",
+            "unknown",
+            "no_alert",
+            "inspect_tool_next_stop"
+          ],
+          "description": "Interpret in the context of task; a diagnosis is a hypothesis until inspection."
+        },
+        "score": {
+          "type": "number",
+          "description": "Rule/model score, NOT necessarily a calibrated probability."
+        },
+        "horizon_cuts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Forecast lookahead in completed cuts."
+        },
+        "minimum_lead_cuts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Earliest future cut counted as actionable failure."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "task": {
+                "const": "forecast"
+              }
+            },
+            "required": [
+              "task"
+            ]
+          },
+          "then": {
+            "required": [
+              "horizon_cuts",
+              "minimum_lead_cuts"
+            ]
+          }
+        }
+      ],
+      "$comment": "Also check that minimum_lead_cuts <= horizon_cuts, as_of is no later than this assessment, and based_on_event_id points to a cut from the same tool.",
+      "additionalProperties": false
+    }
+  }
+}
