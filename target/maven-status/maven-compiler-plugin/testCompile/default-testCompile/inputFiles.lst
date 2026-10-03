@@ -1,6 +1,0 @@
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/ConsumerLagExporterTest.java
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/CutMetricsTest.java
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/CutProducerConfigTest.java
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/CutRecordGeneratorTest.java
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/IdempotentCutConsumerTest.java
-/Users/mark.soule/workspace/gotogether-streaming/src/test/java/com/improving/gotogether/cuts/TransactionalCutConsumerTest.java

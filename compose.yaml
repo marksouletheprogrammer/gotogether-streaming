@@ -35,6 +35,22 @@ x-cut-app-ready: &cut-app-ready
   cuts-app-build:
     condition: service_completed_successfully
 
+x-event-app-ready: &event-app-ready
+  broker:
+    condition: service_healthy
+  schema-registry:
+    condition: service_healthy
+  postgres:
+    condition: service_healthy
+  event-topic-bootstrap:
+    condition: service_completed_successfully
+  event-schema-bootstrap:
+    condition: service_completed_successfully
+  event-db-bootstrap:
+    condition: service_completed_successfully
+  cuts-app-build:
+    condition: service_completed_successfully
+
 services:
   broker:
     <<: *service-defaults
@@ -174,6 +190,47 @@ services:
     networks:
       - streaming
 
+  event-topic-bootstrap:
+    image: confluentinc/cp-kafka:8.1.6
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        for topic in mill-tool-events-source mill-tool-events-dlq; do
+          kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1 --config retention.ms=86400000
+        done
+    depends_on: *broker-ready
+    restart: "no"
+    networks:
+      - streaming
+
+  event-schema-bootstrap:
+    image: python:3.13.7-slim
+    command: ["python", "/scripts/register_event_schemas.py"]
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+      event-topic-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SCHEMA_PATH: /schema/event-record.avsc
+    volumes:
+      - ./scripts/register_event_schemas.py:/scripts/register_event_schemas.py:ro
+      - ./src/main/resources/avro/event-record.avsc:/schema/event-record.avsc:ro
+    restart: "no"
+    networks:
+      - streaming
+
+  event-db-bootstrap:
+    image: postgres:17.6-alpine
+    entrypoint: ["sh", "-ec"]
+    command: ["psql --host postgres --username gotogether --dbname gotogether --set ON_ERROR_STOP=1 --file /sql/init_events.sql"]
+    depends_on: *postgres-ready
+    volumes:
+      - ./scripts/init_events.sql:/sql/init_events.sql:ro
+    restart: "no"
+    networks:
+      - streaming
+
   cuts-app-build:
     image: local/mill-cuts-pipeline:1.0.0
     build:
@@ -257,6 +314,63 @@ services:
       - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
     depends_on: *cut-app-ready
 
+  mill-tool-events-producer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["event-producer"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-tool-events-producer
+      EVENT_TOPIC: mill-tool-events-source
+      EVENT_RECORD_COUNT: "30"
+      EVENT_INTERVAL_MS: "2000"
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
+      POSTGRES_USER: gotogether
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *event-app-ready
+
+  mill-tool-events-consumer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["event-consumer"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-tool-events-consumer
+      CONSUMER_GROUP_ID: mill-tool-events-consumer
+      EVENT_TOPIC: mill-tool-events-source
+      EVENT_DLQ_TOPIC: mill-tool-events-dlq
+      EVENT_FAILURE_PROBABILITY: "0.2"
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
+      POSTGRES_USER: gotogether
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *event-app-ready
+
+  mill-tool-events-outcomes:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-jar", "/app/app.jar"]
+    command: ["event-outcome-exporter"]
+    environment:
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
+      POSTGRES_USER: gotogether
+      EVENT_METRICS_PORT: "9408"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      event-db-bootstrap:
+        condition: service_completed_successfully
+      cuts-app-build:
+        condition: service_completed_successfully
+
   mill-cuts-lag-exporter:
     <<: *service-defaults
     image: local/mill-cuts-pipeline:1.0.0
@@ -270,6 +384,8 @@ services:
       broker:
         condition: service_healthy
       cuts-app-build:
+        condition: service_completed_successfully
+      event-topic-bootstrap:
         condition: service_completed_successfully
 
   postgres:

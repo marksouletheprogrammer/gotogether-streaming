@@ -1,7 +1,0 @@
-com/improving/gotogether/cuts/ConsumerLagExporterTest.class
-com/improving/gotogether/cuts/IdempotentCutConsumerTest.class
-com/improving/gotogether/cuts/CutMetricsTest.class
-com/improving/gotogether/cuts/TransactionalCutConsumerTest.class
-com/improving/gotogether/cuts/TransactionalCutConsumerTest$RecordingKafkaTransaction.class
-com/improving/gotogether/cuts/CutRecordGeneratorTest.class
-com/improving/gotogether/cuts/CutProducerConfigTest.class

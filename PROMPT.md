@@ -43,6 +43,23 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - Naming of all objects should be based on the chosen schema entity/domain. Do not name based off of this spec's name.
 - Monitoring is important. Consumer groups should get their metrics displayed in grafana. Including, but not limited to: lag, throughput, error rates, etc. Producer metrics should also be displayed in grafana.
 
+### Metrics that matter
+- Add a new pipeline with a new producer, topic, and consumer. This one will target a different entity from DATA.md. Do not choose the same entity as the previous pipelines.
+- This new pipeline should also have monitoring in grafana.
+- The producer will write a row to a postgres table for each message it produces. This is the reconciliation table.
+- The consumer will mark each row in the reconciliation table as processed when it consumes the message. It does this in the same transaction that is uses to write the data to the target table.
+- The consumer for this new pipeline can randomly fail to process message. When this happens it writes a message to a dead letter queue with the error in the headers of the message.
+- Create a second grafana dashboard that is an exact copy of the first one with some exceptions that will be detailed next.
+- The second dashboard should have a panel for the dead letter queue depth.
+- The second dashboard should have a panel for the number of messages that are NOT reconcilled. 
+- The second dashboard should have a panel the average staleness of messages. This means that a message was updated at 5:00pm, and the current time is 5:05pm, so the staleness is 5 minutes. The average is calculated across all unique entites from the target table.
+- This new pipeline should start up and start running when the rest of the system starts up. It will run in parallel with all the other pipelines. 
+- The reason why we have 2 separate dashboards is that we want to show a dashboard with the "typical" metrics vs the dashboard that actually matter.
+- All messages for new pipelines should be in AVRO. 
+- The synthetic data should sometimes use the same entities so that the entity is updates occasionally.
+- The synthetic data should sometimes use different entities so that the entity is not updated.
+- The target table should have an updated_at timestamp column.
+
 ## Constraints and Non-Goals
 - No authentication.
 

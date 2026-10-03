@@ -31,3 +31,15 @@ scrape_configs:
   - job_name: mill-cuts-group-lag
     static_configs:
       - targets: [mill-cuts-lag-exporter:9407]
+
+  - job_name: mill-tool-events-producer
+    static_configs:
+      - targets: [mill-tool-events-producer:9406]
+
+  - job_name: mill-tool-events-consumer
+    static_configs:
+      - targets: [mill-tool-events-consumer:9406]
+
+  - job_name: mill-tool-events-outcomes
+    static_configs:
+      - targets: [mill-tool-events-outcomes:9408]

@@ -119,6 +119,31 @@
       ],
       "title": "Idempotent cut consumer lag, throughput and errors",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 36},
+      "id": 12,
+      "targets": [
+        {"expr": "rate(mill_tool_events_producer_records_sent_total{client_id=\"mill-tool-events-producer\"}[1m])", "legendFormat": "sent", "refId": "A"},
+        {"expr": "rate(mill_tool_events_producer_send_errors_total{client_id=\"mill-tool-events-producer\"}[1m])", "legendFormat": "errors", "refId": "B"}
+      ],
+      "title": "Technician event producer throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 36},
+      "id": 13,
+      "targets": [
+        {"expr": "mill_cuts_consumer_group_lag{group_id=\"mill-tool-events-consumer\"}", "legendFormat": "lag", "refId": "A"},
+        {"expr": "rate(mill_tool_events_consumer_records_processed_total{group_id=\"mill-tool-events-consumer\"}[1m])", "legendFormat": "handled", "refId": "B"},
+        {"expr": "rate(mill_tool_events_consumer_processing_errors_total{group_id=\"mill-tool-events-consumer\"}[1m])", "legendFormat": "errors", "refId": "C"}
+      ],
+      "title": "Technician event consumer lag, throughput and errors",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,

@@ -1,0 +1,552 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "up{job=\"kafka-broker\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka broker availability",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "A zero rate means the broker is up and the cumulative byte counter did not grow during the selected window. Missing telemetry is shown as No data; use the Kafka availability panel to distinguish a down scrape target.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "rate(kafka_server_broker_topic_metrics_bytes_in_total[5m])",
+          "legendFormat": "in",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(kafka_server_broker_topic_metrics_bytes_out_total[5m])",
+          "legendFormat": "out",
+          "refId": "B"
+        }
+      ],
+      "title": "Kafka throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "kafka_network_request_metrics_request_total_time_ms_mean",
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka request latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "kafka_server_under_replicated_partitions",
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka under-replicated partitions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "up{job=\"schema-registry\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Schema Registry availability",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "kafka_schema_registry_jersey_request_rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Schema Registry requests per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "kafka_schema_registry_jersey_request_error_rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Schema Registry request errors per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "rate(mill_cuts_producer_records_sent_total{client_id=\"mill-cuts-transactional-producer\"}[1m])",
+          "legendFormat": "sent",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_cuts_producer_send_errors_total{client_id=\"mill-cuts-transactional-producer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "B"
+        }
+      ],
+      "title": "Transactional cut producer throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "rate(mill_cuts_producer_records_sent_total{client_id=\"mill-cuts-at-least-once-producer\"}[1m])",
+          "legendFormat": "sent",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_cuts_producer_send_errors_total{client_id=\"mill-cuts-at-least-once-producer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "B"
+        }
+      ],
+      "title": "At-least-once cut producer throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "mill_cuts_consumer_group_lag{group_id=\"mill-cuts-transactional-consumer\"}",
+          "legendFormat": "lag",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_cuts_consumer_records_processed_total{group_id=\"mill-cuts-transactional-consumer\"}[1m])",
+          "legendFormat": "processed",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mill_cuts_consumer_processing_errors_total{group_id=\"mill-cuts-transactional-consumer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "C"
+        }
+      ],
+      "title": "Transactional cut consumer lag, throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "mill_cuts_consumer_group_lag{group_id=\"mill-cuts-idempotent-consumer\"}",
+          "legendFormat": "lag",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_cuts_consumer_records_processed_total{group_id=\"mill-cuts-idempotent-consumer\"}[1m])",
+          "legendFormat": "processed",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mill_cuts_consumer_processing_errors_total{group_id=\"mill-cuts-idempotent-consumer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "C"
+        }
+      ],
+      "title": "Idempotent cut consumer lag, throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "rate(mill_tool_events_producer_records_sent_total{client_id=\"mill-tool-events-producer\"}[1m])",
+          "legendFormat": "sent",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_tool_events_producer_send_errors_total{client_id=\"mill-tool-events-producer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "B"
+        }
+      ],
+      "title": "Technician event producer throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "mill_cuts_consumer_group_lag{group_id=\"mill-tool-events-consumer\"}",
+          "legendFormat": "lag",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mill_tool_events_consumer_records_processed_total{group_id=\"mill-tool-events-consumer\"}[1m])",
+          "legendFormat": "handled",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mill_tool_events_consumer_processing_errors_total{group_id=\"mill-tool-events-consumer\"}[1m])",
+          "legendFormat": "errors",
+          "refId": "C"
+        }
+      ],
+      "title": "Technician event consumer lag, throughput and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Retained DLQ Kafka records, including duplicates. The count decreases when Kafka retention removes records.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 42
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "mill_tool_events_dlq_topic_length",
+          "legendFormat": "retained records",
+          "refId": "A"
+        },
+        {
+          "expr": "mill_tool_events_dlq_collection_success",
+          "legendFormat": "Kafka collection healthy",
+          "refId": "B"
+        }
+      ],
+      "title": "Dead-letter topic length",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Database rows whose processed flag is false. This is independent of the Kafka DLQ topic length.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 42
+      },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "mill_tool_events_unreconciled",
+          "legendFormat": "unprocessed rows",
+          "refId": "A"
+        },
+        {
+          "expr": "mill_tool_events_outcome_collection_success",
+          "legendFormat": "PostgreSQL collection healthy",
+          "refId": "B"
+        }
+      ],
+      "title": "Unreconciled event rows",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Mean age in seconds of the latest successfully updated row for each unique tool instance.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 42
+      },
+      "id": 16,
+      "targets": [
+        {
+          "expr": "mill_tool_events_average_staleness_seconds",
+          "legendFormat": "average staleness",
+          "refId": "A"
+        },
+        {
+          "expr": "mill_tool_events_outcome_collection_success",
+          "legendFormat": "PostgreSQL collection healthy",
+          "refId": "B"
+        }
+      ],
+      "title": "Average entity staleness",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "kafka",
+    "schema-registry",
+    "cnc-cuts"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Metrics That Matter",
+  "uid": "metrics-that-matter",
+  "version": 1
+}

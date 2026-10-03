@@ -123,12 +123,65 @@ class MonitoringContractTests(unittest.TestCase):
             self.assertTrue(config["rules"])
 
         cut_metrics = yaml.safe_load((MONITORING / "cut-app-jmx.yml").read_text())
-        self.assertEqual({rule["name"] for rule in cut_metrics["rules"]}, {
+        self.assertTrue({
             "mill_cuts_producer_records_sent_total",
             "mill_cuts_producer_send_errors_total",
             "mill_cuts_consumer_records_processed_total",
             "mill_cuts_consumer_processing_errors_total",
-        })
+        } <= {rule["name"] for rule in cut_metrics["rules"]})
+
+    def test_metrics_that_matter_dashboard_copies_baseline_and_adds_three_outcomes(self):
+        second_path = MONITORING / "grafana" / "dashboards" / "metrics-that-matter.json"
+        self.assertTrue(second_path.is_file(), f"Missing provisioned dashboard: {second_path}")
+        second = json.loads(second_path.read_text())
+        baseline = self.dashboard["panels"]
+        self.assertEqual(second["panels"][:len(baseline)], baseline)
+        self.assertEqual(len(second["panels"]), len(baseline) + 3)
+        self.assertNotEqual(second["uid"], self.dashboard["uid"])
+        outcome_expressions = {
+            target["expr"]
+            for panel in second["panels"][len(baseline):]
+            for target in panel.get("targets", [])
+        }
+        self.assertTrue({
+            "mill_tool_events_dlq_topic_length",
+            "mill_tool_events_unreconciled",
+            "mill_tool_events_average_staleness_seconds",
+        } <= outcome_expressions)
+
+    def test_event_jmx_counters_are_exported_as_distinct_series(self):
+        config = yaml.safe_load((MONITORING / "cut-app-jmx.yml").read_text())
+        self.assertIn("com.improving.gotogether.events:type=EventMetrics,*", config["includeObjectNames"])
+        rules = {rule["name"]: rule for rule in config["rules"]}
+        expected = {
+            "mill_tool_events_producer_records_sent_total": "client_id",
+            "mill_tool_events_producer_send_errors_total": "client_id",
+            "mill_tool_events_consumer_records_processed_total": "group_id",
+            "mill_tool_events_consumer_processing_errors_total": "group_id",
+        }
+        self.assertTrue(set(expected) <= set(rules))
+        for metric, label in expected.items():
+            with self.subTest(metric=metric):
+                self.assertIn(label, rules[metric]["labels"])
+
+    def test_event_metrics_scrapes_and_outcome_panels_use_independent_sources(self):
+        jobs = {job["job_name"]: job for job in self.prometheus["scrape_configs"]}
+        self.assertEqual(jobs["mill-tool-events-producer"]["static_configs"][0]["targets"], ["mill-tool-events-producer:9406"])
+        self.assertEqual(jobs["mill-tool-events-consumer"]["static_configs"][0]["targets"], ["mill-tool-events-consumer:9406"])
+        self.assertEqual(jobs["mill-tool-events-outcomes"]["static_configs"][0]["targets"], ["mill-tool-events-outcomes:9408"])
+        lag_job = jobs["mill-cuts-group-lag"]["static_configs"][0]["targets"]
+        self.assertEqual(lag_job, ["mill-cuts-lag-exporter:9407"])
+
+        second = json.loads((MONITORING / "grafana" / "dashboards" / "metrics-that-matter.json").read_text())
+        panels = {panel["title"]: panel for panel in second["panels"]}
+        dlq = panels["Dead-letter topic length"]
+        unreconciled = panels["Unreconciled event rows"]
+        staleness = panels["Average entity staleness"]
+        self.assertIn("mill_tool_events_dlq_topic_length", {target["expr"] for target in dlq["targets"]})
+        self.assertIn("mill_tool_events_unreconciled", {target["expr"] for target in unreconciled["targets"]})
+        self.assertIn("mill_tool_events_average_staleness_seconds", {target["expr"] for target in staleness["targets"]})
+        self.assertEqual(staleness["fieldConfig"]["defaults"]["unit"], "s")
+        self.assertEqual(staleness["fieldConfig"]["defaults"]["noValue"], "No data")
 
     def test_metrics_services_are_loopback_published_with_disposable_storage(self):
         services = self.compose["services"]
@@ -159,6 +212,25 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertEqual(traffic["fieldConfig"]["defaults"]["noValue"], "No data")
         self.assertIn("zero", traffic["description"].lower())
         self.assertIn("missing", traffic["description"].lower())
+
+    def test_event_runbook_documents_topics_tables_metrics_and_both_dashboards(self):
+        readme = (ROOT / "README.md").read_text()
+        for value in (
+            "mill-tool-events-source",
+            "mill-tool-events-dlq",
+            "mill-tool-events-consumer",
+            "mill_tool_event_reconciliation",
+            "mill_tool_event_state",
+            "mill_tool_events_dlq_topic_length",
+            "mill_tool_events_unreconciled",
+            "mill_tool_events_average_staleness_seconds",
+            "metrics-that-matter",
+            "error header",
+            "retention",
+            "processed = false",
+        ):
+            with self.subTest(value=value):
+                self.assertIn(value, readme)
 
     def test_runbook_commands_and_endpoints_match_checked_in_stack(self):
         readme = (ROOT / "README.md").read_text()

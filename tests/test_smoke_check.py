@@ -11,9 +11,15 @@ from scripts.smoke_check import (
     RUNNING_SERVICES,
     SETUP_SERVICES,
     CUT_SUBJECTS,
+    EVENT_SUBJECTS,
+    EVENT_TOPICS,
+    OUTCOME_DASHBOARD_UID,
     validate_akhq_topic_names,
     validate_cluster_metadata,
     validate_cut_schemas,
+    validate_event_schemas,
+    validate_event_tables,
+    validate_grafana_dashboards,
     validate_prometheus_metrics,
     validate_prometheus_targets,
     validate_registered_schema,
@@ -28,6 +34,7 @@ from scripts.smoke_check import (
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / "schemas" / "cnc-demo-records.schema.json").read_text())
 AVRO_SCHEMA = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "cut-record.avsc").read_text())
+EVENT_AVRO_SCHEMA = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "event-record.avsc").read_text())
 SUBJECT = "cnc-demo-records-value"
 
 
@@ -63,6 +70,34 @@ class SmokeCheckTests(unittest.TestCase):
         mismatched = {**versions, CUT_SUBJECTS[0]: {**versions[CUT_SUBJECTS[0]], "schemaType": "JSON"}}
         with self.assertRaisesRegex(ValueError, "not registered as the expected Avro"):
             validate_cut_schemas([*CUT_SUBJECTS, SUBJECT], mismatched, AVRO_SCHEMA)
+
+    def test_event_topics_and_subjects_must_match_the_canonical_avro_schema(self):
+        self.assertEqual(EVENT_TOPICS, ("mill-tool-events-source", "mill-tool-events-dlq"))
+        self.assertEqual(EVENT_SUBJECTS, tuple(f"{topic}-value" for topic in EVENT_TOPICS))
+        versions = {
+            subject: {"subject": subject, "schemaType": "AVRO", "schema": json.dumps(EVENT_AVRO_SCHEMA)}
+            for subject in EVENT_SUBJECTS
+        }
+        self.assertEqual(validate_event_schemas(EVENT_SUBJECTS, versions, EVENT_AVRO_SCHEMA), versions)
+        with self.assertRaisesRegex(ValueError, "subjects are missing"):
+            validate_event_schemas([], versions, EVENT_AVRO_SCHEMA)
+        mismatched = {**versions, EVENT_SUBJECTS[0]: {**versions[EVENT_SUBJECTS[0]], "schemaType": "JSON"}}
+        with self.assertRaisesRegex(ValueError, "not registered as the expected Avro"):
+            validate_event_schemas(EVENT_SUBJECTS, mismatched, EVENT_AVRO_SCHEMA)
+
+    def test_event_tables_and_both_provisioned_dashboards_are_required(self):
+        self.assertTrue(validate_event_tables((
+            "mill_tool_event_reconciliation",
+            "mill_tool_event_state",
+        )))
+        with self.assertRaisesRegex(ValueError, "Event tables are missing"):
+            validate_event_tables(("mill_tool_event_state",))
+        self.assertEqual(
+            validate_grafana_dashboards(("base-streaming-platform", OUTCOME_DASHBOARD_UID)),
+            {"base-streaming-platform", OUTCOME_DASHBOARD_UID},
+        )
+        with self.assertRaisesRegex(ValueError, "dashboards are missing"):
+            validate_grafana_dashboards(("base-streaming-platform",))
 
     def test_akhq_must_list_all_default_topics(self):
         self.assertEqual(set(validate_akhq_topic_names(REQUIRED_TOPICS)), set(REQUIRED_TOPICS))
@@ -123,15 +158,16 @@ class SmokeCheckTests(unittest.TestCase):
     def test_full_stack_requires_application_and_database_services(self):
         services = [
             "broker", "schema-registry", "topic-bootstrap", "cut-topic-bootstrap",
-            "schema-bootstrap", "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "postgres", "akhq", "prometheus", "grafana",
+            "schema-bootstrap", "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "event-topic-bootstrap",
+            "event-schema-bootstrap", "event-db-bootstrap", "postgres", "akhq", "prometheus", "grafana",
             "mill-cuts-transactional-producer", "mill-cuts-at-least-once-producer",
             "mill-cuts-transactional-consumer", "mill-cuts-idempotent-consumer", "cuts-app-build",
-            "mill-cuts-lag-exporter",
+            "mill-cuts-lag-exporter", "mill-tool-events-producer", "mill-tool-events-consumer", "mill-tool-events-outcomes",
         ]
         self.assertEqual(validate_required_services(services), services)
         with self.assertRaisesRegex(ValueError, "missing from the default stack"):
             validate_required_services(["broker", "postgres"])
-        with self.assertRaisesRegex(ValueError, "exactly two producers and two consumers"):
+        with self.assertRaisesRegex(ValueError, "exactly two cut producers and two cut consumers"):
             validate_required_services(services + ["mill-cuts-extra-consumer"])
 
 

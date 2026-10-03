@@ -6,8 +6,14 @@ public final class CutsApplication {
 
     public static void main(String[] args) {
         System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
-        if (args.length == 1 && "lag-exporter".equals(args[0])) {
-            ConsumerLagExporter.runFromEnvironment();
+        if (args.length == 1) {
+            switch (args[0]) {
+                case "lag-exporter" -> ConsumerLagExporter.runFromEnvironment();
+                case "event-producer" -> EventProducer.runFromEnvironment();
+                case "event-consumer" -> EventConsumerService.runFromEnvironment();
+                case "event-outcome-exporter" -> EventOutcomeMetricsExporter.runFromEnvironment();
+                default -> throw new IllegalArgumentException("Unknown application role: " + args[0]);
+            }
             return;
         }
         if (args.length != 2) {

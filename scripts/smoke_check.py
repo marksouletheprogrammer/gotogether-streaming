@@ -30,14 +30,20 @@ PROMETHEUS_JOBS = (
     "mill-cuts-transactional-consumer",
     "mill-cuts-idempotent-consumer",
     "mill-cuts-group-lag",
+    "mill-tool-events-producer",
+    "mill-tool-events-consumer",
+    "mill-tool-events-outcomes",
 )
-REQUIRED_TOPICS = (
-    TOPIC,
+CUT_TOPICS = (
     "mill-cuts-transactional-source",
     "mill-cuts-replay-source",
     "mill-cuts-committed",
 )
-CUT_SUBJECTS = tuple(f"{topic}-value" for topic in REQUIRED_TOPICS[1:])
+EVENT_TOPICS = ("mill-tool-events-source", "mill-tool-events-dlq")
+EVENT_SUBJECTS = tuple(f"{topic}-value" for topic in EVENT_TOPICS)
+OUTCOME_DASHBOARD_UID = "metrics-that-matter"
+REQUIRED_TOPICS = (TOPIC, *CUT_TOPICS, *EVENT_TOPICS)
+CUT_SUBJECTS = tuple(f"{topic}-value" for topic in CUT_TOPICS)
 RUNNING_SERVICES = (
     "broker",
     "schema-registry",
@@ -50,6 +56,9 @@ RUNNING_SERVICES = (
     "mill-cuts-transactional-consumer",
     "mill-cuts-idempotent-consumer",
     "mill-cuts-lag-exporter",
+    "mill-tool-events-producer",
+    "mill-tool-events-consumer",
+    "mill-tool-events-outcomes",
 )
 SETUP_SERVICES = (
     "topic-bootstrap",
@@ -57,6 +66,9 @@ SETUP_SERVICES = (
     "schema-bootstrap",
     "cuts-db-bootstrap",
     "cuts-avro-schema-bootstrap",
+    "event-topic-bootstrap",
+    "event-schema-bootstrap",
+    "event-db-bootstrap",
     "cuts-app-build",
 )
 REQUIRED_METRICS = (
@@ -72,6 +84,14 @@ REQUIRED_METRICS = (
     "mill_cuts_consumer_processing_errors_total",
     "mill_cuts_consumer_group_lag",
     "mill_cuts_consumer_lag_collection_success",
+    "mill_tool_events_producer_records_sent_total",
+    "mill_tool_events_producer_send_errors_total",
+    "mill_tool_events_consumer_records_processed_total",
+    "mill_tool_events_consumer_processing_errors_total",
+    "mill_tool_events_dlq_topic_length",
+    "mill_tool_events_dlq_collection_success",
+    "mill_tool_events_unreconciled",
+    "mill_tool_events_outcome_collection_success",
 )
 
 
@@ -258,6 +278,35 @@ def validate_service_states(containers):
     return containers
 
 
+def fetch_event_tables():
+    query = (
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' "
+        "AND table_name IN ('mill_tool_event_reconciliation', 'mill_tool_event_state') ORDER BY table_name"
+    )
+    result = subprocess.run(
+        [
+            "docker", "compose", "exec", "-T", "postgres", "psql", "--username", "gotogether",
+            "--dbname", "gotogether", "--tuples-only", "--no-align", "--command", query,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    if result.returncode:
+        raise RuntimeError(f"Could not inspect event PostgreSQL tables: {result.stderr.strip()}")
+    return {name.strip() for name in result.stdout.splitlines() if name.strip()}
+
+
+def fetch_grafana_dashboards():
+    dashboards = set()
+    for uid in ("base-streaming-platform", OUTCOME_DASHBOARD_UID):
+        response = request_json(f"{GRAFANA_URL}/api/dashboards/uid/{uid}")
+        if response.get("dashboard", {}).get("uid") != uid:
+            raise RuntimeError(f"Grafana did not load the provisioned dashboard {uid}")
+        dashboards.add(uid)
+    return dashboards
+
+
 def compose_logs():
     result = subprocess.run(
         ["docker", "compose", "logs", "--no-color", "--tail=200"],
@@ -331,20 +380,56 @@ def validate_cut_schemas(subjects, versions, canonical_schema):
     return versions
 
 
+def validate_event_schemas(subjects, versions, canonical_schema):
+    missing = set(EVENT_SUBJECTS) - set(subjects)
+    if missing:
+        raise ValueError(f"Event Avro subjects are missing: {', '.join(sorted(missing))}")
+    for subject in EVENT_SUBJECTS:
+        version = versions.get(subject, {})
+        if version.get("subject") != subject or version.get("schemaType") != "AVRO":
+            raise ValueError(f"{subject} is not registered as the expected Avro event schema")
+        try:
+            registered_schema = json.loads(version["schema"])
+        except (KeyError, json.JSONDecodeError) as error:
+            raise ValueError(f"{subject} has invalid Avro schema text") from error
+        if registered_schema != canonical_schema:
+            raise ValueError(f"{subject} does not match the canonical event Avro schema")
+    return versions
+
+
+def validate_event_tables(table_names):
+    required = {"mill_tool_event_reconciliation", "mill_tool_event_state"}
+    missing = required - set(table_names)
+    if missing:
+        raise ValueError(f"Event tables are missing: {', '.join(sorted(missing))}")
+    return table_names
+
+
+def validate_grafana_dashboards(dashboard_uids):
+    required = {"base-streaming-platform", OUTCOME_DASHBOARD_UID}
+    missing = required - set(dashboard_uids)
+    if missing:
+        raise ValueError(f"Grafana dashboards are missing: {', '.join(sorted(missing))}")
+    return set(dashboard_uids)
+
+
 def validate_required_services(services):
     required = {
         "broker", "schema-registry", "topic-bootstrap", "cut-topic-bootstrap", "schema-bootstrap",
-        "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "cuts-app-build", "mill-cuts-lag-exporter", "postgres", "akhq", "prometheus", "grafana",
+        "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "event-topic-bootstrap", "event-schema-bootstrap",
+        "event-db-bootstrap", "cuts-app-build", "mill-cuts-lag-exporter", "mill-tool-events-outcomes",
+        "postgres", "akhq", "prometheus", "grafana",
         "mill-cuts-transactional-producer", "mill-cuts-at-least-once-producer",
         "mill-cuts-transactional-consumer", "mill-cuts-idempotent-consumer",
+        "mill-tool-events-producer", "mill-tool-events-consumer",
     }
     missing = required - set(services)
     if missing:
         raise ValueError(f"Compose services are missing from the default stack: {', '.join(sorted(missing))}")
-    producers = [service for service in services if service.endswith("-producer")]
-    consumers = [service for service in services if service.endswith("-consumer")]
-    if len(producers) != 2 or len(consumers) != 2:
-        raise ValueError(f"The default stack must contain exactly two producers and two consumers; found {len(producers)} producers and {len(consumers)} consumers")
+    cut_producers = [service for service in services if service.startswith("mill-cuts-") and service.endswith("-producer")]
+    cut_consumers = [service for service in services if service.startswith("mill-cuts-") and service.endswith("-consumer")]
+    if len(cut_producers) != 2 or len(cut_consumers) != 2:
+        raise ValueError(f"The default stack must contain exactly two cut producers and two cut consumers; found {len(cut_producers)} cut producers and {len(cut_consumers)} cut consumers")
     return services
 
 
@@ -383,10 +468,12 @@ def main():
     try:
         canonical_schema = json.loads((ROOT / "schemas" / "cnc-demo-records.schema.json").read_text())
         canonical_avro = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "cut-record.avsc").read_text())
+        event_avro = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "event-record.avsc").read_text())
         validate_required_services(compose_services())
         validate_service_states(compose_statuses())
         validate_service_logs(compose_logs())
         check_tcp_endpoint("127.0.0.1", int(os.environ.get("POSTGRES_PORT", "5432")))
+        validate_event_tables(fetch_event_tables())
         offsets = validate_topic_offsets(topic_offsets())
         validate_cluster_metadata(fetch_cluster_metadata("127.0.0.1:9092"), "127.0.0.1")
         if not internal_cluster_metadata().strip():
@@ -405,6 +492,14 @@ def main():
             },
             canonical_avro,
         )
+        validate_event_schemas(
+            subject_names,
+            {
+                subject: request_json(f"{REGISTRY_URL}/subjects/{subject}/versions/latest")
+                for subject in EVENT_SUBJECTS
+            },
+            event_avro,
+        )
         validate_topic_names(fetch_topic_names("127.0.0.1:9092"))
         validate_akhq_topic_names(request_json(f"{AKHQ_URL}/api/local/topic/name"))
         check_ready(f"{PROMETHEUS_URL}/-/ready")
@@ -412,14 +507,12 @@ def main():
         grafana_health = request_json(f"{GRAFANA_URL}/api/health")
         if grafana_health.get("database") != "ok":
             raise RuntimeError(f"Grafana is not healthy: {grafana_health}")
-        dashboard = request_json(f"{GRAFANA_URL}/api/dashboards/uid/base-streaming-platform")
-        if dashboard.get("dashboard", {}).get("uid") != "base-streaming-platform":
-            raise RuntimeError("Grafana did not load the provisioned base streaming dashboard")
+        validate_grafana_dashboards(fetch_grafana_dashboards())
     except (OSError, RuntimeError, ValueError) as error:
         print(f"Smoke check failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"Smoke check passed: all services are running, logs are clean, Kafka topics and schema subjects are reachable, PostgreSQL accepts connections, and the existing Grafana dashboard and {len(offsets)}-partition empty sample topic are ready.")
+    print(f"Smoke check passed: all cut and event services are running, event topics, Avro subjects, and tables are ready, outcome metrics are reachable, both Grafana dashboards are provisioned, and the {len(offsets)}-partition canonical sample topic is empty.")
     return 0
 
 

@@ -2,6 +2,7 @@ lowercaseOutputName: true
 lowercaseOutputLabelNames: true
 includeObjectNames:
   - "com.improving.gotogether.cuts:type=CutMetrics,*"
+  - "com.improving.gotogether.events:type=EventMetrics,*"
 rules:
   - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=producer, type=CutMetrics><>RecordsSentTotal'
     name: mill_cuts_producer_records_sent_total
@@ -20,6 +21,26 @@ rules:
       group_id: "$1"
   - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=consumer, type=CutMetrics><>ProcessingErrorsTotal'
     name: mill_cuts_consumer_processing_errors_total
+    type: COUNTER
+    labels:
+      group_id: "$1"
+  - pattern: 'com.improving.gotogether.events<identity="([^"]+)", role=producer, type=EventMetrics><>RecordsSentTotal'
+    name: mill_tool_events_producer_records_sent_total
+    type: COUNTER
+    labels:
+      client_id: "$1"
+  - pattern: 'com.improving.gotogether.events<identity="([^"]+)", role=producer, type=EventMetrics><>SendErrorsTotal'
+    name: mill_tool_events_producer_send_errors_total
+    type: COUNTER
+    labels:
+      client_id: "$1"
+  - pattern: 'com.improving.gotogether.events<identity="([^"]+)", role=consumer, type=EventMetrics><>RecordsProcessedTotal'
+    name: mill_tool_events_consumer_records_processed_total
+    type: COUNTER
+    labels:
+      group_id: "$1"
+  - pattern: 'com.improving.gotogether.events<identity="([^"]+)", role=consumer, type=EventMetrics><>ProcessingErrorsTotal'
+    name: mill_tool_events_consumer_processing_errors_total
     type: COUNTER
     labels:
       group_id: "$1"

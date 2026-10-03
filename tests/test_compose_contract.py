@@ -32,17 +32,75 @@ class ComposeContractTests(unittest.TestCase):
             "mill-cuts-at-least-once-producer",
             "mill-cuts-transactional-consumer",
             "mill-cuts-idempotent-consumer",
+            "mill-tool-events-producer",
+            "mill-tool-events-consumer",
+            "mill-tool-events-outcomes",
+            "event-topic-bootstrap",
+            "event-schema-bootstrap",
+            "event-db-bootstrap",
             "cuts-app-build",
             "mill-cuts-lag-exporter",
             "postgres",
         }
         self.assertTrue(required <= set(self.services), f"Default stack is missing services: {required - set(self.services)}")
-        self.assertEqual(sum(name.endswith("-producer") for name in self.services), 2)
-        self.assertEqual(sum(name.endswith("-consumer") for name in self.services), 2)
+        cut_producers = [name for name in self.services if name.startswith("mill-cuts-") and name.endswith("-producer")]
+        cut_consumers = [name for name in self.services if name.startswith("mill-cuts-") and name.endswith("-consumer")]
+        self.assertEqual(len(cut_producers), 2)
+        self.assertEqual(len(cut_consumers), 2)
+        self.assertEqual(sum(name.endswith("-producer") for name in self.services), 3)
+        self.assertEqual(sum(name.endswith("-consumer") for name in self.services), 3)
         self.assertIsNone(self.services["mill-cuts-transactional-producer"].get("profiles"))
         self.assertIsNone(self.services["mill-cuts-at-least-once-producer"].get("profiles"))
         self.assertIsNone(self.services["mill-cuts-transactional-consumer"].get("profiles"))
         self.assertIsNone(self.services["mill-cuts-idempotent-consumer"].get("profiles"))
+
+    def test_event_services_are_default_started_with_health_gated_dependencies(self):
+        producer = self.services["mill-tool-events-producer"]
+        consumer = self.services["mill-tool-events-consumer"]
+        outcomes = self.services["mill-tool-events-outcomes"]
+        for service in (producer, consumer, outcomes):
+            self.assertIsNone(service.get("profiles"))
+            self.assertEqual(service["restart"], "unless-stopped")
+
+        producer_environment = producer["environment"]
+        consumer_environment = consumer["environment"]
+        self.assertEqual(producer["command"], ["event-producer"])
+        self.assertEqual(consumer["command"], ["event-consumer"])
+        self.assertEqual(outcomes["command"], ["event-outcome-exporter"])
+        self.assertEqual(producer_environment["EVENT_TOPIC"], "mill-tool-events-source")
+        self.assertEqual(producer_environment["KAFKA_CLIENT_ID"], "mill-tool-events-producer")
+        self.assertEqual(consumer_environment["EVENT_TOPIC"], "mill-tool-events-source")
+        self.assertEqual(consumer_environment["EVENT_DLQ_TOPIC"], "mill-tool-events-dlq")
+        self.assertEqual(consumer_environment["CONSUMER_GROUP_ID"], "mill-tool-events-consumer")
+        self.assertEqual(consumer_environment["EVENT_FAILURE_PROBABILITY"], "0.2")
+        self.assertEqual(outcomes["environment"]["EVENT_METRICS_PORT"], "9408")
+
+        for service in (producer, consumer):
+            dependencies = service["depends_on"]
+            for dependency in ("broker", "schema-registry", "postgres"):
+                self.assertEqual(dependencies[dependency]["condition"], "service_healthy")
+            for dependency in ("event-topic-bootstrap", "event-schema-bootstrap", "event-db-bootstrap", "cuts-app-build"):
+                self.assertEqual(dependencies[dependency]["condition"], "service_completed_successfully")
+
+        self.assertEqual(outcomes["depends_on"]["postgres"]["condition"], "service_healthy")
+        self.assertEqual(outcomes["depends_on"]["event-db-bootstrap"]["condition"], "service_completed_successfully")
+
+    def test_event_topics_schema_and_database_are_bootstrapped_idempotently(self):
+        topics = self.services["event-topic-bootstrap"]
+        self.assertEqual(topics["depends_on"]["broker"]["condition"], "service_healthy")
+        self.assertIn("--if-not-exists", topics["command"][0])
+        self.assertIn("mill-tool-events-source", topics["command"][0])
+        self.assertIn("mill-tool-events-dlq", topics["command"][0])
+
+        schema = self.services["event-schema-bootstrap"]
+        self.assertEqual(schema["depends_on"]["schema-registry"]["condition"], "service_healthy")
+        self.assertEqual(schema["depends_on"]["event-topic-bootstrap"]["condition"], "service_completed_successfully")
+        self.assertIn("./scripts/register_event_schemas.py:/scripts/register_event_schemas.py:ro", schema["volumes"])
+        self.assertIn("./src/main/resources/avro/event-record.avsc:/schema/event-record.avsc:ro", schema["volumes"])
+
+        database = self.services["event-db-bootstrap"]
+        self.assertEqual(database["depends_on"]["postgres"]["condition"], "service_healthy")
+        self.assertIn("./scripts/init_events.sql:/sql/init_events.sql:ro", database["volumes"])
 
     def test_cut_producers_have_distinct_topics_clients_and_matched_rates(self):
         transactional = self.services["mill-cuts-transactional-producer"]
@@ -63,6 +121,7 @@ class ComposeContractTests(unittest.TestCase):
         self.assertEqual(exporter["environment"]["LAG_EXPORTER_PORT"], "9407")
         self.assertEqual(exporter["depends_on"]["broker"]["condition"], "service_healthy")
         self.assertEqual(exporter["depends_on"]["cuts-app-build"]["condition"], "service_completed_successfully")
+        self.assertEqual(exporter["depends_on"]["event-topic-bootstrap"]["condition"], "service_completed_successfully")
         self.assertIsNone(exporter.get("profiles"))
 
     def test_postgres_is_default_networked_persistent_and_loopback_published(self):
