@@ -5,19 +5,29 @@ from unittest.mock import patch
 
 from scripts import smoke_check
 from scripts.smoke_check import (
+    PROMETHEUS_JOBS,
     REQUIRED_METRICS,
+    REQUIRED_TOPICS,
+    RUNNING_SERVICES,
+    SETUP_SERVICES,
+    CUT_SUBJECTS,
     validate_akhq_topic_names,
     validate_cluster_metadata,
+    validate_cut_schemas,
     validate_prometheus_metrics,
     validate_prometheus_targets,
     validate_registered_schema,
-    validate_service_scope,
+    validate_required_services,
+    validate_service_logs,
+    validate_service_states,
+    validate_topic_names,
     validate_topic_offsets,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / "schemas" / "cnc-demo-records.schema.json").read_text())
+AVRO_SCHEMA = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "cut-record.avsc").read_text())
 SUBJECT = "cnc-demo-records-value"
 
 
@@ -42,10 +52,22 @@ class SmokeCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             validate_registered_schema([SUBJECT], wrong_schema, SCHEMA)
 
-    def test_akhq_must_list_the_sample_topic(self):
-        self.assertIn("cnc-demo-records", validate_akhq_topic_names(["cnc-demo-records"]))
-        with self.assertRaisesRegex(ValueError, "does not list topic"):
-            validate_akhq_topic_names([])
+    def test_cut_subjects_must_be_registered_with_canonical_avro_schema(self):
+        versions = {
+            subject: {"subject": subject, "schemaType": "AVRO", "schema": json.dumps(AVRO_SCHEMA)}
+            for subject in CUT_SUBJECTS
+        }
+        self.assertEqual(validate_cut_schemas([*CUT_SUBJECTS, SUBJECT], versions, AVRO_SCHEMA), versions)
+        with self.assertRaisesRegex(ValueError, "subjects are missing"):
+            validate_cut_schemas([SUBJECT], versions, AVRO_SCHEMA)
+        mismatched = {**versions, CUT_SUBJECTS[0]: {**versions[CUT_SUBJECTS[0]], "schemaType": "JSON"}}
+        with self.assertRaisesRegex(ValueError, "not registered as the expected Avro"):
+            validate_cut_schemas([*CUT_SUBJECTS, SUBJECT], mismatched, AVRO_SCHEMA)
+
+    def test_akhq_must_list_all_default_topics(self):
+        self.assertEqual(set(validate_akhq_topic_names(REQUIRED_TOPICS)), set(REQUIRED_TOPICS))
+        with self.assertRaisesRegex(ValueError, "Kafka topics are missing"):
+            validate_akhq_topic_names(["cnc-demo-records"])
 
     def test_host_cluster_metadata_must_advertise_expected_broker(self):
         metadata = {"cluster_id": "demo-cluster", "brokers": [{"host": "127.0.0.1", "port": 9092}]}
@@ -64,12 +86,14 @@ class SmokeCheckTests(unittest.TestCase):
 
     def test_prometheus_target_health_distinguishes_down_from_up(self):
         targets = [
-            {"labels": {"job": "kafka-broker"}, "health": "up"},
-            {"labels": {"job": "schema-registry"}, "health": "down"},
+            {"labels": {"job": job}, "health": "down" if job == "schema-registry" else "up"}
+            for job in PROMETHEUS_JOBS
         ]
-        self.assertEqual(validate_prometheus_targets(targets), {"kafka-broker": True, "schema-registry": False})
+        health = validate_prometheus_targets(targets)
+        self.assertFalse(health["schema-registry"])
+        self.assertTrue(all(health[job] for job in PROMETHEUS_JOBS if job != "schema-registry"))
         with self.assertRaisesRegex(ValueError, "target is missing"):
-            validate_prometheus_targets(targets[:1])
+            validate_prometheus_targets(targets[:-1])
 
     def test_prometheus_requires_each_live_metric_series(self):
         results = {name: [{"metric": {"__name__": name}, "value": [0, "0"]}] for name in REQUIRED_METRICS}
@@ -77,10 +101,38 @@ class SmokeCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "has no live series"):
             validate_prometheus_metrics({})
 
-    def test_base_stack_excludes_application_and_database_services(self):
-        self.assertEqual(validate_service_scope(["broker", "topic-bootstrap", "akhq"]), ["broker", "topic-bootstrap", "akhq"])
-        with self.assertRaisesRegex(ValueError, "Unexpected application services"):
-            validate_service_scope(["broker", "producer-demo"])
+    def test_startup_smoke_requires_running_services_and_successful_setup_jobs(self):
+        containers = [
+            {"Service": name, "State": "running", "Health": "healthy" if name in {"broker", "schema-registry", "postgres"} else ""}
+            for name in RUNNING_SERVICES
+        ] + [{"Service": name, "State": "exited", "ExitCode": 0} for name in SETUP_SERVICES]
+        self.assertTrue(validate_service_states(containers))
+
+        failed = [*containers, {"Service": "mill-cuts-idempotent-consumer", "State": "exited", "ExitCode": 1}]
+        with self.assertRaisesRegex(ValueError, "is exited"):
+            validate_service_states(failed)
+
+    def test_startup_smoke_checks_logs_and_expected_topics(self):
+        self.assertTrue(validate_service_logs("broker started\\nproducer ready\\n"))
+        with self.assertRaisesRegex(ValueError, "startup errors"):
+            validate_service_logs("Exception in thread \\\"main\\\" failed")
+        self.assertEqual(validate_topic_names(REQUIRED_TOPICS), REQUIRED_TOPICS)
+        with self.assertRaisesRegex(ValueError, "topics are missing"):
+            validate_topic_names(["cnc-demo-records"])
+
+    def test_full_stack_requires_application_and_database_services(self):
+        services = [
+            "broker", "schema-registry", "topic-bootstrap", "cut-topic-bootstrap",
+            "schema-bootstrap", "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "postgres", "akhq", "prometheus", "grafana",
+            "mill-cuts-transactional-producer", "mill-cuts-at-least-once-producer",
+            "mill-cuts-transactional-consumer", "mill-cuts-idempotent-consumer", "cuts-app-build",
+            "mill-cuts-lag-exporter",
+        ]
+        self.assertEqual(validate_required_services(services), services)
+        with self.assertRaisesRegex(ValueError, "missing from the default stack"):
+            validate_required_services(["broker", "postgres"])
+        with self.assertRaisesRegex(ValueError, "exactly two producers and two consumers"):
+            validate_required_services(services + ["mill-cuts-extra-consumer"])
 
 
 if __name__ == "__main__":

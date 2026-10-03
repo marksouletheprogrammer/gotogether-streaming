@@ -11,3 +11,23 @@ scrape_configs:
   - job_name: schema-registry
     static_configs:
       - targets: [schema-registry:9405]
+
+  - job_name: mill-cuts-transactional-producer
+    static_configs:
+      - targets: [mill-cuts-transactional-producer:9406]
+
+  - job_name: mill-cuts-at-least-once-producer
+    static_configs:
+      - targets: [mill-cuts-at-least-once-producer:9406]
+
+  - job_name: mill-cuts-transactional-consumer
+    static_configs:
+      - targets: [mill-cuts-transactional-consumer:9406]
+
+  - job_name: mill-cuts-idempotent-consumer
+    static_configs:
+      - targets: [mill-cuts-idempotent-consumer:9406]
+
+  - job_name: mill-cuts-group-lag
+    static_configs:
+      - targets: [mill-cuts-lag-exporter:9407]

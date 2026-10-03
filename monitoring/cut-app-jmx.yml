@@ -1,0 +1,25 @@
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+includeObjectNames:
+  - "com.improving.gotogether.cuts:type=CutMetrics,*"
+rules:
+  - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=producer, type=CutMetrics><>RecordsSentTotal'
+    name: mill_cuts_producer_records_sent_total
+    type: COUNTER
+    labels:
+      client_id: "$1"
+  - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=producer, type=CutMetrics><>SendErrorsTotal'
+    name: mill_cuts_producer_send_errors_total
+    type: COUNTER
+    labels:
+      client_id: "$1"
+  - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=consumer, type=CutMetrics><>RecordsProcessedTotal'
+    name: mill_cuts_consumer_records_processed_total
+    type: COUNTER
+    labels:
+      group_id: "$1"
+  - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=consumer, type=CutMetrics><>ProcessingErrorsTotal'
+    name: mill_cuts_consumer_processing_errors_total
+    type: COUNTER
+    labels:
+      group_id: "$1"

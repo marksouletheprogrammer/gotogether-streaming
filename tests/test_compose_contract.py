@@ -16,7 +16,7 @@ class ComposeContractTests(unittest.TestCase):
         cls.compose = yaml.safe_load(COMPOSE_PATH.read_text())
         cls.services = cls.compose["services"]
 
-    def test_single_node_kraft_listeners_and_demo_scope(self):
+    def test_single_node_kraft_and_default_cut_application_services(self):
         broker = self.services["broker"]
         environment = broker["environment"]
         self.assertIn("broker,controller", environment["KAFKA_PROCESS_ROLES"])
@@ -27,7 +27,95 @@ class ComposeContractTests(unittest.TestCase):
             volume.split(":", 1) for volume in broker["volumes"]
         )))
         self.assertNotIn("zookeeper", self.services)
-        self.assertFalse({"producer", "consumer", "database"} & set(self.services))
+        required = {
+            "mill-cuts-transactional-producer",
+            "mill-cuts-at-least-once-producer",
+            "mill-cuts-transactional-consumer",
+            "mill-cuts-idempotent-consumer",
+            "cuts-app-build",
+            "mill-cuts-lag-exporter",
+            "postgres",
+        }
+        self.assertTrue(required <= set(self.services), f"Default stack is missing services: {required - set(self.services)}")
+        self.assertEqual(sum(name.endswith("-producer") for name in self.services), 2)
+        self.assertEqual(sum(name.endswith("-consumer") for name in self.services), 2)
+        self.assertIsNone(self.services["mill-cuts-transactional-producer"].get("profiles"))
+        self.assertIsNone(self.services["mill-cuts-at-least-once-producer"].get("profiles"))
+        self.assertIsNone(self.services["mill-cuts-transactional-consumer"].get("profiles"))
+        self.assertIsNone(self.services["mill-cuts-idempotent-consumer"].get("profiles"))
+
+    def test_cut_producers_have_distinct_topics_clients_and_matched_rates(self):
+        transactional = self.services["mill-cuts-transactional-producer"]
+        at_least_once = self.services["mill-cuts-at-least-once-producer"]
+        transactional_env = transactional["environment"]
+        at_least_once_env = at_least_once["environment"]
+
+        self.assertEqual(transactional_env["CUT_TOPIC"], "mill-cuts-transactional-source")
+        self.assertEqual(at_least_once_env["CUT_TOPIC"], "mill-cuts-replay-source")
+        self.assertNotEqual(transactional_env["KAFKA_CLIENT_ID"], at_least_once_env["KAFKA_CLIENT_ID"])
+        self.assertEqual(transactional_env["CUT_RECORD_COUNT"], at_least_once_env["CUT_RECORD_COUNT"])
+        self.assertEqual(transactional_env["CUT_INTERVAL_MS"], at_least_once_env["CUT_INTERVAL_MS"])
+        self.assertEqual(transactional["command"], ["producer", "transactional"])
+        self.assertEqual(at_least_once["command"], ["producer", "at-least-once"])
+
+    def test_group_lag_exporter_is_default_started_after_kafka_and_java_build(self):
+        exporter = self.services["mill-cuts-lag-exporter"]
+        self.assertEqual(exporter["environment"]["LAG_EXPORTER_PORT"], "9407")
+        self.assertEqual(exporter["depends_on"]["broker"]["condition"], "service_healthy")
+        self.assertEqual(exporter["depends_on"]["cuts-app-build"]["condition"], "service_completed_successfully")
+        self.assertIsNone(exporter.get("profiles"))
+
+    def test_postgres_is_default_networked_persistent_and_loopback_published(self):
+        database = self.services["postgres"]
+        self.assertTrue(any(port.get("host_ip") == "127.0.0.1" and port.get("target") == 5432 for port in database["ports"]))
+        self.assertEqual(database["networks"], ["streaming"])
+        self.assertEqual(database["restart"], "unless-stopped")
+        self.assertTrue(any("/var/lib/postgresql/data" in volume for volume in database["volumes"]))
+        self.assertIn("pg_isready", " ".join(database["healthcheck"]["test"]))
+        self.assertEqual(database["environment"]["POSTGRES_HOST_AUTH_METHOD"], "trust")
+
+    def test_cut_applications_wait_for_kafka_registry_and_postgres(self):
+        for name in (
+            "mill-cuts-transactional-producer",
+            "mill-cuts-at-least-once-producer",
+            "mill-cuts-transactional-consumer",
+            "mill-cuts-idempotent-consumer",
+        ):
+            with self.subTest(service=name):
+                dependencies = self.services[name]["depends_on"]
+                self.assertEqual(dependencies["broker"]["condition"], "service_healthy")
+                self.assertEqual(dependencies["schema-registry"]["condition"], "service_healthy")
+                self.assertEqual(dependencies["postgres"]["condition"], "service_healthy")
+
+    def test_cut_topics_and_tables_are_bootstrapped_idempotently(self):
+        cut_topics = self.services["cut-topic-bootstrap"]
+        self.assertEqual(cut_topics["image"], "confluentinc/cp-kafka:8.1.6")
+        self.assertEqual(cut_topics["depends_on"]["broker"]["condition"], "service_healthy")
+        self.assertIn("--if-not-exists", cut_topics["command"][0])
+        for topic in (
+            "mill-cuts-transactional-source",
+            "mill-cuts-replay-source",
+            "mill-cuts-committed",
+        ):
+            self.assertIn(topic, cut_topics["command"][0])
+
+        database_setup = self.services["cuts-db-bootstrap"]
+        self.assertEqual(database_setup["depends_on"]["postgres"]["condition"], "service_healthy")
+        self.assertIn("./scripts/init_cuts.sql:/sql/init_cuts.sql:ro", database_setup["volumes"])
+        schema_sql = (ROOT / "scripts" / "init_cuts.sql").read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS mill_cuts_transactional_writes", schema_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS mill_cuts_idempotent_writes", schema_sql)
+        self.assertIn("event_id TEXT PRIMARY KEY", schema_sql)
+        repository = (ROOT / "src" / "main" / "java" / "com" / "improving" / "gotogether" / "cuts" / "PostgresCutRepository.java").read_text()
+        self.assertIn("ON CONFLICT (event_id) DO UPDATE", repository)
+        self.assertIn("payload = EXCLUDED.payload", repository)
+
+        avro_setup = self.services["cuts-avro-schema-bootstrap"]
+        self.assertEqual(avro_setup["image"], "python:3.13.7-slim")
+        self.assertEqual(avro_setup["depends_on"]["schema-registry"]["condition"], "service_healthy")
+        self.assertEqual(avro_setup["depends_on"]["cut-topic-bootstrap"]["condition"], "service_completed_successfully")
+        self.assertIn("./scripts/register_cut_schemas.py:/scripts/register_cut_schemas.py:ro", avro_setup["volumes"])
+        self.assertIn("./src/main/resources/avro/cut-record.avsc:/schema/cut-record.avsc:ro", avro_setup["volumes"])
 
     def test_health_checks_use_commands_available_in_service_images(self):
         broker_check = " ".join(self.services["broker"]["healthcheck"]["test"])

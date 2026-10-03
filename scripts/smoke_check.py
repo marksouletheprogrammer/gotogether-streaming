@@ -1,11 +1,16 @@
 import json
+import os
+import re
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from kafka import KafkaConsumer
 from kafka.admin import KafkaAdminClient
 from kafka.errors import KafkaError
 
@@ -17,7 +22,43 @@ REGISTRY_URL = "http://localhost:8081"
 AKHQ_URL = "http://localhost:8080"
 PROMETHEUS_URL = "http://localhost:9090"
 GRAFANA_URL = "http://localhost:3000"
-PROMETHEUS_JOBS = ("kafka-broker", "schema-registry")
+PROMETHEUS_JOBS = (
+    "kafka-broker",
+    "schema-registry",
+    "mill-cuts-transactional-producer",
+    "mill-cuts-at-least-once-producer",
+    "mill-cuts-transactional-consumer",
+    "mill-cuts-idempotent-consumer",
+    "mill-cuts-group-lag",
+)
+REQUIRED_TOPICS = (
+    TOPIC,
+    "mill-cuts-transactional-source",
+    "mill-cuts-replay-source",
+    "mill-cuts-committed",
+)
+CUT_SUBJECTS = tuple(f"{topic}-value" for topic in REQUIRED_TOPICS[1:])
+RUNNING_SERVICES = (
+    "broker",
+    "schema-registry",
+    "postgres",
+    "akhq",
+    "prometheus",
+    "grafana",
+    "mill-cuts-transactional-producer",
+    "mill-cuts-at-least-once-producer",
+    "mill-cuts-transactional-consumer",
+    "mill-cuts-idempotent-consumer",
+    "mill-cuts-lag-exporter",
+)
+SETUP_SERVICES = (
+    "topic-bootstrap",
+    "cut-topic-bootstrap",
+    "schema-bootstrap",
+    "cuts-db-bootstrap",
+    "cuts-avro-schema-bootstrap",
+    "cuts-app-build",
+)
 REQUIRED_METRICS = (
     "kafka_server_broker_topic_metrics_bytes_in_total",
     "kafka_server_broker_topic_metrics_bytes_out_total",
@@ -25,6 +66,12 @@ REQUIRED_METRICS = (
     "kafka_network_request_metrics_request_total_time_ms_mean",
     "kafka_schema_registry_jersey_request_rate",
     "kafka_schema_registry_jersey_request_error_rate",
+    "mill_cuts_producer_records_sent_total",
+    "mill_cuts_producer_send_errors_total",
+    "mill_cuts_consumer_records_processed_total",
+    "mill_cuts_consumer_processing_errors_total",
+    "mill_cuts_consumer_group_lag",
+    "mill_cuts_consumer_lag_collection_success",
 )
 
 
@@ -71,9 +118,7 @@ def validate_registered_schema(subjects, version, canonical_schema):
 
 
 def validate_akhq_topic_names(topic_names):
-    if TOPIC not in topic_names:
-        raise ValueError(f"AKHQ cluster local does not list topic {TOPIC}")
-    return topic_names
+    return validate_topic_names(topic_names)
 
 
 def validate_cluster_metadata(metadata, expected_host):
@@ -170,14 +215,136 @@ def compose_services():
     return result.stdout.splitlines()
 
 
-def validate_service_scope(services):
-    forbidden = [
-        service for service in services
-        if service in {"producer", "consumer", "database", "postgres"}
-        or service.startswith(("producer-", "consumer-"))
-    ]
-    if forbidden:
-        raise ValueError(f"Unexpected application services in base stack: {', '.join(forbidden)}")
+def compose_statuses():
+    result = subprocess.run(
+        ["docker", "compose", "ps", "--all", "--format", "json"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    if result.returncode:
+        raise RuntimeError(f"Could not inspect Compose service states: {result.stderr.strip()}")
+
+    output = result.stdout.strip()
+    if not output:
+        return []
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        parsed = [json.loads(line) for line in output.splitlines() if line.strip()]
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+def validate_service_states(containers):
+    by_service = {container.get("Service"): container for container in containers}
+    missing = (set(RUNNING_SERVICES) | set(SETUP_SERVICES)) - set(by_service)
+    if missing:
+        raise ValueError(f"Compose containers are missing: {', '.join(sorted(missing))}")
+
+    failures = []
+    for service in RUNNING_SERVICES:
+        container = by_service[service]
+        if container.get("State") != "running":
+            failures.append(f"{service} is {container.get('Status', container.get('State'))}")
+        if service in {"broker", "schema-registry", "postgres"} and container.get("Health") != "healthy":
+            failures.append(f"{service} health is {container.get('Health') or 'unknown'}")
+
+    for service in SETUP_SERVICES:
+        container = by_service[service]
+        if container.get("State") != "exited" or int(container.get("ExitCode", -1)) != 0:
+            failures.append(f"{service} did not complete successfully")
+    if failures:
+        raise ValueError("Compose services are not ready: " + "; ".join(failures))
+    return containers
+
+
+def compose_logs():
+    result = subprocess.run(
+        ["docker", "compose", "logs", "--no-color", "--tail=200"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    if result.returncode:
+        raise RuntimeError(f"Could not inspect Compose logs: {result.stderr.strip()}")
+    return result.stdout + result.stderr
+
+
+def validate_service_logs(logs):
+    failure = re.compile(r"Exception in thread|\bSEVERE:|\bERROR:|\bFATAL:", re.IGNORECASE)
+    failures = [line for line in logs.splitlines() if failure.search(line)]
+    if failures:
+        raise ValueError("Service logs contain startup errors: " + " | ".join(failures[:5]))
+    return logs
+
+
+def check_tcp_endpoint(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=5):
+            return True
+    except OSError as error:
+        raise RuntimeError(f"Endpoint {host}:{port} is unreachable: {error}") from error
+
+
+def fetch_topic_names(bootstrap_server):
+    try:
+        consumer = KafkaConsumer(
+            bootstrap_servers=bootstrap_server,
+            client_id="gotogether-smoke-topic-check",
+            request_timeout_ms=5000,
+            bootstrap_timeout_ms=5000,
+            enable_auto_commit=False,
+        )
+        try:
+            return consumer.topics()
+        finally:
+            consumer.close()
+    except KafkaError as error:
+        raise RuntimeError(f"Kafka topic metadata request failed for {bootstrap_server}: {error}") from error
+
+
+def validate_topic_names(topic_names):
+    missing = set(REQUIRED_TOPICS) - set(topic_names)
+    if missing:
+        raise ValueError(f"Kafka topics are missing: {', '.join(sorted(missing))}")
+    return topic_names
+
+
+def validate_cut_subjects(subjects):
+    missing = set(CUT_SUBJECTS) - set(subjects)
+    if missing:
+        raise ValueError(f"Cut Avro subjects are missing: {', '.join(sorted(missing))}")
+    return subjects
+
+
+def validate_cut_schemas(subjects, versions, canonical_schema):
+    validate_cut_subjects(subjects)
+    for subject, version in versions.items():
+        if version.get("subject") != subject or version.get("schemaType") != "AVRO":
+            raise ValueError(f"{subject} is not registered as the expected Avro value schema")
+        try:
+            registered_schema = json.loads(version["schema"])
+        except (KeyError, json.JSONDecodeError) as error:
+            raise ValueError(f"{subject} has invalid Avro schema text") from error
+        if registered_schema != canonical_schema:
+            raise ValueError(f"{subject} does not match the canonical cut Avro schema")
+    return versions
+
+
+def validate_required_services(services):
+    required = {
+        "broker", "schema-registry", "topic-bootstrap", "cut-topic-bootstrap", "schema-bootstrap",
+        "cuts-avro-schema-bootstrap", "cuts-db-bootstrap", "cuts-app-build", "mill-cuts-lag-exporter", "postgres", "akhq", "prometheus", "grafana",
+        "mill-cuts-transactional-producer", "mill-cuts-at-least-once-producer",
+        "mill-cuts-transactional-consumer", "mill-cuts-idempotent-consumer",
+    }
+    missing = required - set(services)
+    if missing:
+        raise ValueError(f"Compose services are missing from the default stack: {', '.join(sorted(missing))}")
+    producers = [service for service in services if service.endswith("-producer")]
+    consumers = [service for service in services if service.endswith("-consumer")]
+    if len(producers) != 2 or len(consumers) != 2:
+        raise ValueError(f"The default stack must contain exactly two producers and two consumers; found {len(producers)} producers and {len(consumers)} consumers")
     return services
 
 
@@ -193,29 +360,55 @@ def topic_offsets():
     return result.stdout
 
 
+def wait_for_prometheus(attempts=10, interval_seconds=2):
+    last_error = None
+    for _ in range(attempts):
+        try:
+            targets = request_json(f"{PROMETHEUS_URL}/api/v1/targets?state=active")
+            if targets.get("status") != "success":
+                raise RuntimeError(f"Prometheus target request failed: {targets}")
+            target_status = validate_prometheus_targets(targets.get("data", {}).get("activeTargets", []))
+            down_targets = [job for job, healthy in target_status.items() if not healthy]
+            if down_targets:
+                raise ValueError(f"Prometheus scrape targets are down: {', '.join(down_targets)}")
+            validate_prometheus_metrics({metric: prometheus_query(metric) for metric in REQUIRED_METRICS})
+            return target_status
+        except (RuntimeError, ValueError) as error:
+            last_error = error
+            time.sleep(interval_seconds)
+    raise RuntimeError(f"Prometheus targets or metrics did not become ready: {last_error}")
+
+
 def main():
     try:
         canonical_schema = json.loads((ROOT / "schemas" / "cnc-demo-records.schema.json").read_text())
+        canonical_avro = json.loads((ROOT / "src" / "main" / "resources" / "avro" / "cut-record.avsc").read_text())
+        validate_required_services(compose_services())
+        validate_service_states(compose_statuses())
+        validate_service_logs(compose_logs())
+        check_tcp_endpoint("127.0.0.1", int(os.environ.get("POSTGRES_PORT", "5432")))
         offsets = validate_topic_offsets(topic_offsets())
-        validate_service_scope(compose_services())
         validate_cluster_metadata(fetch_cluster_metadata("127.0.0.1:9092"), "127.0.0.1")
         if not internal_cluster_metadata().strip():
             raise RuntimeError("Internal Kafka metadata request returned no broker data")
+        subject_names = request_json(f"{REGISTRY_URL}/subjects")
         validate_registered_schema(
-            request_json(f"{REGISTRY_URL}/subjects"),
+            subject_names,
             request_json(f"{REGISTRY_URL}/subjects/{SUBJECT}/versions/latest"),
             canonical_schema,
         )
+        validate_cut_schemas(
+            subject_names,
+            {
+                subject: request_json(f"{REGISTRY_URL}/subjects/{subject}/versions/latest")
+                for subject in CUT_SUBJECTS
+            },
+            canonical_avro,
+        )
+        validate_topic_names(fetch_topic_names("127.0.0.1:9092"))
         validate_akhq_topic_names(request_json(f"{AKHQ_URL}/api/local/topic/name"))
         check_ready(f"{PROMETHEUS_URL}/-/ready")
-        targets = request_json(f"{PROMETHEUS_URL}/api/v1/targets?state=active")
-        if targets.get("status") != "success":
-            raise RuntimeError(f"Prometheus target request failed: {targets}")
-        target_status = validate_prometheus_targets(targets.get("data", {}).get("activeTargets", []))
-        down_targets = [job for job, healthy in target_status.items() if not healthy]
-        if down_targets:
-            raise RuntimeError(f"Prometheus scrape targets are down: {', '.join(down_targets)}")
-        validate_prometheus_metrics({metric: prometheus_query(metric) for metric in REQUIRED_METRICS})
+        wait_for_prometheus()
         grafana_health = request_json(f"{GRAFANA_URL}/api/health")
         if grafana_health.get("database") != "ok":
             raise RuntimeError(f"Grafana is not healthy: {grafana_health}")
@@ -226,7 +419,7 @@ def main():
         print(f"Smoke check failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"Smoke check passed: {TOPIC} is empty, {SUBJECT} matches the canonical JSON Schema, AKHQ lists the topic, and broker/registry metrics and dashboards are ready across {len(offsets)} partition(s).")
+    print(f"Smoke check passed: all services are running, logs are clean, Kafka topics and schema subjects are reachable, PostgreSQL accepts connections, and the existing Grafana dashboard and {len(offsets)}-partition empty sample topic are ready.")
     return 0
 
 

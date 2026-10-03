@@ -11,6 +11,30 @@ x-registry-ready: &registry-ready
   schema-registry:
     condition: service_healthy
 
+x-postgres-ready: &postgres-ready
+  postgres:
+    condition: service_healthy
+
+x-cut-app-ready: &cut-app-ready
+  broker:
+    condition: service_healthy
+  schema-registry:
+    condition: service_healthy
+  postgres:
+    condition: service_healthy
+  topic-bootstrap:
+    condition: service_completed_successfully
+  cut-topic-bootstrap:
+    condition: service_completed_successfully
+  schema-bootstrap:
+    condition: service_completed_successfully
+  cuts-db-bootstrap:
+    condition: service_completed_successfully
+  cuts-avro-schema-bootstrap:
+    condition: service_completed_successfully
+  cuts-app-build:
+    condition: service_completed_successfully
+
 services:
   broker:
     <<: *service-defaults
@@ -103,6 +127,19 @@ services:
     networks:
       - streaming
 
+  cut-topic-bootstrap:
+    image: confluentinc/cp-kafka:8.1.6
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        for topic in mill-cuts-transactional-source mill-cuts-replay-source mill-cuts-committed; do
+          kafka-topics --bootstrap-server broker:29092 --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1 --config retention.ms=86400000
+        done
+    depends_on: *broker-ready
+    restart: "no"
+    networks:
+      - streaming
+
   schema-bootstrap:
     image: python:3.13.7-slim
     command: ["python", "/scripts/register_schema.py"]
@@ -116,6 +153,153 @@ services:
     volumes:
       - ./scripts/register_schema.py:/scripts/register_schema.py:ro
       - ./schemas/cnc-demo-records.schema.json:/schema/cnc-demo-records.schema.json:ro
+    restart: "no"
+    networks:
+      - streaming
+
+  cuts-avro-schema-bootstrap:
+    image: python:3.13.7-slim
+    command: ["python", "/scripts/register_cut_schemas.py"]
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+      cut-topic-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SCHEMA_PATH: /schema/cut-record.avsc
+    volumes:
+      - ./scripts/register_cut_schemas.py:/scripts/register_cut_schemas.py:ro
+      - ./src/main/resources/avro/cut-record.avsc:/schema/cut-record.avsc:ro
+    restart: "no"
+    networks:
+      - streaming
+
+  cuts-app-build:
+    image: local/mill-cuts-pipeline:1.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    entrypoint: ["sh", "-c"]
+    command: ["true"]
+    restart: "no"
+    networks:
+      - streaming
+
+  mill-cuts-transactional-producer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["producer", "transactional"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-cuts-transactional-producer
+      CUT_TOPIC: mill-cuts-transactional-source
+      CUT_RECORD_COUNT: "30"
+      CUT_INTERVAL_MS: "2000"
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *cut-app-ready
+
+  mill-cuts-at-least-once-producer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["producer", "at-least-once"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-cuts-at-least-once-producer
+      CUT_TOPIC: mill-cuts-replay-source
+      CUT_RECORD_COUNT: "30"
+      CUT_INTERVAL_MS: "2000"
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *cut-app-ready
+
+  mill-cuts-transactional-consumer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["consumer", "transactional"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-cuts-transactional-consumer
+      KAFKA_TRANSACTIONAL_ID: mill-cuts-transactional-consumer
+      CONSUMER_GROUP_ID: mill-cuts-transactional-consumer
+      CUT_TOPIC: mill-cuts-transactional-source
+      PROCESSED_TOPIC: mill-cuts-committed
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
+      POSTGRES_USER: gotogether
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *cut-app-ready
+
+  mill-cuts-idempotent-consumer:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-javaagent:/usr/share/java/jmx_prometheus_javaagent-1.6.0.jar=9406:/etc/jmx/cut-app.yml", "-jar", "/app/app.jar"]
+    command: ["consumer", "idempotent"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KAFKA_CLIENT_ID: mill-cuts-idempotent-consumer
+      CONSUMER_GROUP_ID: mill-cuts-idempotent-consumer
+      CUT_TOPIC: mill-cuts-replay-source
+      POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
+      POSTGRES_USER: gotogether
+    volumes:
+      - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
+    depends_on: *cut-app-ready
+
+  mill-cuts-lag-exporter:
+    <<: *service-defaults
+    image: local/mill-cuts-pipeline:1.0.0
+    mem_limit: 512m
+    entrypoint: ["java", "-jar", "/app/app.jar"]
+    command: ["lag-exporter"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      LAG_EXPORTER_PORT: "9407"
+    depends_on:
+      broker:
+        condition: service_healthy
+      cuts-app-build:
+        condition: service_completed_successfully
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:17.6-alpine
+    mem_limit: 512m
+    ports:
+      - target: 5432
+        published: "${POSTGRES_PORT:-5432}"
+        host_ip: 127.0.0.1
+    environment:
+      POSTGRES_DB: gotogether
+      POSTGRES_USER: gotogether
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gotogether -d gotogether"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  cuts-db-bootstrap:
+    image: postgres:17.6-alpine
+    entrypoint: ["sh", "-ec"]
+    command: ["psql --host postgres --username gotogether --dbname gotogether --set ON_ERROR_STOP=1 --file /sql/init_cuts.sql"]
+    depends_on: *postgres-ready
+    volumes:
+      - ./scripts/init_cuts.sql:/sql/init_cuts.sql:ro
     restart: "no"
     networks:
       - streaming
@@ -177,6 +361,7 @@ services:
 
 volumes:
   kafka_data:
+  postgres_data:
   prometheus_data:
   grafana_data:
 

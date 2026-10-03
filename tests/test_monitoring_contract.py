@@ -52,6 +52,44 @@ class MonitoringContractTests(unittest.TestCase):
         }
         self.assertTrue(required <= expressions, f"Dashboard is missing expressions: {required - expressions}")
 
+    def test_cut_metrics_have_default_scrape_targets_and_existing_dashboard_panels(self):
+        jobs = {job["job_name"]: job for job in self.prometheus["scrape_configs"]}
+        targets = {
+            job: jobs[job]["static_configs"][0]["targets"]
+            for job in (
+                "mill-cuts-transactional-producer",
+                "mill-cuts-at-least-once-producer",
+                "mill-cuts-transactional-consumer",
+                "mill-cuts-idempotent-consumer",
+                "mill-cuts-group-lag",
+            )
+        }
+        self.assertEqual(targets["mill-cuts-transactional-producer"], ["mill-cuts-transactional-producer:9406"])
+        self.assertEqual(targets["mill-cuts-at-least-once-producer"], ["mill-cuts-at-least-once-producer:9406"])
+        self.assertEqual(targets["mill-cuts-transactional-consumer"], ["mill-cuts-transactional-consumer:9406"])
+        self.assertEqual(targets["mill-cuts-idempotent-consumer"], ["mill-cuts-idempotent-consumer:9406"])
+        self.assertEqual(targets["mill-cuts-group-lag"], ["mill-cuts-lag-exporter:9407"])
+
+        expressions = {
+            target["expr"]
+            for panel in self.dashboard["panels"]
+            for target in panel.get("targets", [])
+        }
+        required = {
+            'rate(mill_cuts_producer_records_sent_total{client_id="mill-cuts-transactional-producer"}[1m])',
+            'rate(mill_cuts_producer_send_errors_total{client_id="mill-cuts-transactional-producer"}[1m])',
+            'rate(mill_cuts_producer_records_sent_total{client_id="mill-cuts-at-least-once-producer"}[1m])',
+            'rate(mill_cuts_producer_send_errors_total{client_id="mill-cuts-at-least-once-producer"}[1m])',
+            'mill_cuts_consumer_group_lag{group_id="mill-cuts-transactional-consumer"}',
+            'rate(mill_cuts_consumer_records_processed_total{group_id="mill-cuts-transactional-consumer"}[1m])',
+            'rate(mill_cuts_consumer_processing_errors_total{group_id="mill-cuts-transactional-consumer"}[1m])',
+            'mill_cuts_consumer_group_lag{group_id="mill-cuts-idempotent-consumer"}',
+            'rate(mill_cuts_consumer_records_processed_total{group_id="mill-cuts-idempotent-consumer"}[1m])',
+            'rate(mill_cuts_consumer_processing_errors_total{group_id="mill-cuts-idempotent-consumer"}[1m])',
+        }
+        self.assertTrue(required <= expressions, f"Existing dashboard is missing cut panels: {required - expressions}")
+        self.assertEqual(self.dashboard["uid"], "base-streaming-platform")
+
     def test_jmx_agents_are_pinned_checksum_verified_and_bounded(self):
         downloader = (ROOT / "scripts" / "download_jmx_exporter.py").read_text()
         dockerfile = (ROOT / "Dockerfile.jmx").read_text()
@@ -59,6 +97,19 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertIn("a95983fd96e865d2bcdf911cc500e7c82808c27ab9fd226bf96732b6c3d8c46e", downloader)
         self.assertIn("hashlib.sha256(artifact).hexdigest()", downloader)
         self.assertIn("COPY --from=jmx-agent", dockerfile)
+        app_dockerfile = (ROOT / "Dockerfile.app").read_text()
+        self.assertIn("COPY --from=jmx-agent", app_dockerfile)
+
+        for service_name in (
+            "mill-cuts-transactional-producer",
+            "mill-cuts-at-least-once-producer",
+            "mill-cuts-transactional-consumer",
+            "mill-cuts-idempotent-consumer",
+        ):
+            with self.subTest(service=service_name):
+                service = self.compose["services"][service_name]
+                self.assertIn("=9406:/etc/jmx/cut-app.yml", " ".join(service["entrypoint"]))
+                self.assertIn("./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro", service["volumes"])
 
         broker = self.compose["services"]["broker"]
         registry = self.compose["services"]["schema-registry"]
@@ -66,10 +117,18 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertEqual(registry["build"]["args"]["CONFLUENT_IMAGE"], "confluentinc/cp-schema-registry:8.1.6")
         self.assertIn("=9404:/etc/jmx/kafka.yml", broker["environment"]["KAFKA_OPTS"])
         self.assertIn("=9405:/etc/jmx/schema-registry.yml", registry["environment"]["SCHEMA_REGISTRY_JMX_OPTS"])
-        for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml"):
+        for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml", "cut-app-jmx.yml"):
             config = yaml.safe_load((MONITORING / filename).read_text())
             self.assertLessEqual(len(config["includeObjectNames"]), 4)
             self.assertTrue(config["rules"])
+
+        cut_metrics = yaml.safe_load((MONITORING / "cut-app-jmx.yml").read_text())
+        self.assertEqual({rule["name"] for rule in cut_metrics["rules"]}, {
+            "mill_cuts_producer_records_sent_total",
+            "mill_cuts_producer_send_errors_total",
+            "mill_cuts_consumer_records_processed_total",
+            "mill_cuts_consumer_processing_errors_total",
+        })
 
     def test_metrics_services_are_loopback_published_with_disposable_storage(self):
         services = self.compose["services"]
@@ -90,7 +149,7 @@ class MonitoringContractTests(unittest.TestCase):
             for panel in self.dashboard["panels"]
             for target in panel.get("targets", [])
         }
-        for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml"):
+        for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml", "cut-app-jmx.yml"):
             rules = yaml.safe_load((MONITORING / filename).read_text())["rules"]
             for rule in rules:
                 with self.subTest(metric=rule["name"]):

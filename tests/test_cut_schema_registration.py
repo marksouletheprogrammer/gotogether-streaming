@@ -1,0 +1,68 @@
+import contextlib
+import io
+import json
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError
+
+from scripts import register_cut_schemas
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_PATH = ROOT / "src" / "main" / "resources" / "avro" / "cut-record.avsc"
+SCHEMA = json.loads(SCHEMA_PATH.read_text())
+
+
+class CutSchemaRegistrationTests(unittest.TestCase):
+    def test_cut_subjects_are_avro_topic_value_subjects(self):
+        self.assertEqual(
+            register_cut_schemas.CUT_SUBJECTS,
+            tuple(f"{topic}-value" for topic in register_cut_schemas.CUT_TOPICS),
+        )
+        self.assertNotIn("cnc-demo-records-value", register_cut_schemas.CUT_SUBJECTS)
+        payload = json.loads(register_cut_schemas.build_registration_payload(json.dumps(SCHEMA)))
+        self.assertEqual(payload["schemaType"], "AVRO")
+        self.assertEqual(json.loads(payload["schema"]), SCHEMA)
+
+    def test_matching_subject_is_reused_without_posting(self):
+        subject = register_cut_schemas.CUT_SUBJECTS[0]
+        existing = {"id": 7, "schemaType": "AVRO", "schema": json.dumps(SCHEMA)}
+        with patch("scripts.register_cut_schemas.urlopen", return_value=io.BytesIO(json.dumps(existing).encode())) as opener:
+            self.assertEqual(register_cut_schemas.register_or_verify(subject, json.dumps(SCHEMA)), (7, False))
+        opener.assert_called_once()
+
+    def test_missing_subject_is_registered_once(self):
+        requests = []
+        subject = register_cut_schemas.CUT_SUBJECTS[0]
+
+        def open_request(request, timeout):
+            requests.append(request)
+            if isinstance(request, str):
+                raise HTTPError(request, 404, "Not found", None, None)
+            return io.BytesIO(b'{"id": 9}')
+
+        with patch("scripts.register_cut_schemas.urlopen", side_effect=open_request):
+            self.assertEqual(register_cut_schemas.register_or_verify(subject, json.dumps(SCHEMA)), (9, True))
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(json.loads(requests[1].data)["schemaType"], "AVRO")
+
+    def test_register_all_visits_only_the_three_cut_value_subjects(self):
+        with patch.object(register_cut_schemas, "register_or_verify", return_value=(1, True)) as register:
+            self.assertEqual(len(register_cut_schemas.register_all(json.dumps(SCHEMA))), 3)
+        self.assertEqual(
+            [call.args[0] for call in register.call_args_list],
+            list(register_cut_schemas.CUT_SUBJECTS),
+        )
+
+    def test_mismatched_subject_fails_without_posting(self):
+        subject = register_cut_schemas.CUT_SUBJECTS[0]
+        existing = {"id": 7, "schemaType": "AVRO", "schema": json.dumps({"type": "record", "name": "Wrong"})}
+        with patch("scripts.register_cut_schemas.urlopen", return_value=io.BytesIO(json.dumps(existing).encode())) as opener:
+            with self.assertRaisesRegex(ValueError, "differs"):
+                register_cut_schemas.register_or_verify(subject, json.dumps(SCHEMA))
+        opener.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
