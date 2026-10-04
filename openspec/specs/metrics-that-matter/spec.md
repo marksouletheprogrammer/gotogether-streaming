@@ -79,27 +79,32 @@ The event consumer SHALL support a configurable probability of randomly injectin
 - **THEN** it writes the target and processed marker without publishing that event to the DLQ
 
 ### Requirement: Two provisioned views of operational metrics
-The existing Grafana dashboard SHALL retain all its current broker, registry, and cut panels and add labeled event producer throughput/error and event consumer throughput/error/lag panels using live data from the existing Prometheus stack. A second provisioned dashboard SHALL reproduce every baseline panel from that updated dashboard, with only a distinct identity/title and three additional panels: DLQ topic length (sum across DLQ partitions of latest offset minus earliest retained offset), unreconciled count (reconciliation rows with `processed = false`), and average staleness in seconds (arithmetic mean of `now - updated_at` over the latest target row per unique `(machine_id, tool_instance_id)`). The DLQ length SHALL come from Kafka, count retained copies including duplicates, and vary with topic retention; it SHALL NOT be inferred from reconciliation rows. The unreconciled count SHALL come from PostgreSQL, including rows for failed sends and DLQ events, and SHALL NOT be inferred from Kafka offsets. On zero target rows staleness SHALL be shown as no data rather than a fabricated zero; zero Kafka topic length and zero unreconciled rows SHALL be shown as zero when their respective collection sources are healthy. A down Kafka or database metrics source MUST be distinguishable from a healthy zero reading without substituting one source's data for the other.
+The existing Grafana dashboard SHALL retain its broker, registry, cut, and event metrics while presenting producer throughput, producer error rate, consumer throughput, consumer error rate, and consumer lag in separate time-series panels. Producer throughput/error panels SHALL be filterable by producer client ID; consumer throughput/error/lag panels SHALL be filterable by consumer group ID. The corresponding selectors MUST default to all available values and apply consistently to all related panels. Topic selection MUST filter panels whose metric series expose a topic label, including lag, without treating unlabeled producer metrics as topic-labeled. A second provisioned dashboard SHALL reproduce every shared panel and selector from the base dashboard with identical shared-panel definitions and only a distinct identity/title, plus exactly three outcome panels that remain exclusive to the second dashboard: DLQ topic length (sum across DLQ partitions of latest offset minus earliest retained offset), unreconciled count (reconciliation rows with `processed = false`), and average staleness in seconds (arithmetic mean of `now - updated_at` over the latest target row per unique `(machine_id, tool_instance_id)`). DLQ length SHALL be displayed as a single-value counter/stat, come from Kafka, count retained copies including duplicates, and vary with topic retention; it SHALL NOT be inferred from reconciliation rows. Unreconciled count SHALL be displayed as a single-value counter/stat, come from PostgreSQL, include rows for failed sends and DLQ events, and SHALL NOT be inferred from Kafka offsets. Average staleness SHALL remain a time-series value with seconds as its unit. On zero target rows staleness SHALL be shown as no data rather than a fabricated zero; zero Kafka topic length and zero unreconciled rows SHALL be shown as zero when their respective collection sources are healthy. A down Kafka or database metrics source MUST be distinguishable from a healthy zero reading without substituting one source's data for the other.
 
 #### Scenario: Compare dashboards
 - **GIVEN** a live event pipeline and both dashboards provisioned on localhost
 - **WHEN** an operator opens both dashboards
-- **THEN** each shows the same conventional broker, registry, cut, and event pipeline panels, while only the second shows DLQ topic length, unreconciled count, and average staleness
+- **THEN** each shows identical shared broker, registry, cut, and event panels and selectors, while only the second shows DLQ topic length, unreconciled count, and average staleness
 
 #### Scenario: Inspect separate DLQ and reconciliation counts
 - **GIVEN** an unprocessed row for a failed send, another unprocessed row whose event has two retained DLQ copies, and a processed row
 - **WHEN** outcome metrics are refreshed
-- **THEN** DLQ topic length is two retained Kafka records and unreconciled count is two database rows; neither metric is derived from the other's source
+- **THEN** DLQ topic length is shown as a counter/stat with value two retained Kafka records and unreconciled count as a counter/stat with value two database rows; neither metric is derived from the other's source
 
 #### Scenario: Observe staleness and unavailable telemetry
 - **GIVEN** at least two entity rows with different `updated_at` timestamps
 - **WHEN** time advances without another successful update and metrics are scraped
-- **THEN** average staleness increases according to the mean of those two entity ages; if the target table is empty or its measurement fails, the panel reports no data rather than a healthy zero
+- **THEN** average staleness increases as a seconds-based time series according to the mean of those two entity ages; if the target table is empty or its measurement fails, the panel reports no data rather than a healthy zero
 
 #### Scenario: Kafka DLQ metrics unavailable
 - **GIVEN** Kafka cannot provide DLQ partition offsets
 - **WHEN** monitoring refreshes
 - **THEN** DLQ topic length is shown as unavailable, not zero, without altering the independent database-derived unreconciled and staleness measurements
+
+#### Scenario: Dashboard filters and shared-panel parity
+- **GIVEN** both dashboards are provisioned with producer, consumer-group, and topic-labeled metrics
+- **WHEN** an operator changes any selector on either dashboard
+- **THEN** its matching shared panels respond to the same selection rules, selectors default to all values, and contract checks confirm that all shared panels remain identical while outcome panels remain exclusive to the second dashboard
 
 ### Requirement: Reproducible event-pipeline verification
 The system SHALL document event topic/group and table identifiers, both Grafana dashboards, nondestructive Compose startup/shutdown, the meaning and independent sources of the three outcome metrics, and how to inspect DLQ errors. Focused automated checks SHALL cover canonical event Avro equivalence/validation, installation-and-repeat generation, database-before-send ordering, atomic target-and-marker updates, DLQ header and offset ordering, Kafka DLQ topic length, and independent PostgreSQL outcome counts. The startup smoke check SHALL verify the new services, topics, subjects, tables, metrics targets, and two provisioned dashboards while preserving the existing cut and empty-sample checks.

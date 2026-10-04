@@ -69,6 +69,12 @@ Grafana provisions two dashboards at `http://localhost:3000`:
 - **Base Streaming Platform** shows broker, Schema Registry, cut, and conventional event producer/consumer throughput, errors, and lag.
 - **Metrics That Matter** contains those same baseline panels plus the three outcome metrics below.
 
+Both dashboards share three selectors: **Producer client ID**, **Consumer group ID**, and **Topic**; each defaults to All available values. **Kafka throughput** and **Producer throughput** intentionally show the same producer records-per-second series by client ID, not broker byte rates; both and **Producer send errors** follow the producer selector. Consumer throughput, processing-error, and lag panels follow the consumer-group selector. Topic filters only the topic-labeled lag panel.
+
+The Base Streaming Platform dashboard is organized into **Broker and registry**, **Producer activity**, **Consumer activity and lag**, and **Component health** sections. Each health panel reports **Healthy (green)** for a reachable target, **Unhealthy (red)** for a failed scrape, and **Unavailable (gray)** when health telemetry is missing.
+
+Metrics That Matter adds exactly three outcome panels: **Dead-letter topic length** and **Unreconciled event rows** are stat panels, while **Average entity staleness** remains a time series measured in seconds. A healthy zero count is distinct from missing or unavailable source telemetry.
+
 These metrics have separate sources and meanings:
 
 - `mill_tool_events_dlq_topic_length` is the retained record count from the Kafka DLQ topic, summed as latest offset minus earliest retained offset across its partitions. Duplicate DLQ records count separately, and Kafka retention can reduce the value.

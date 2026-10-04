@@ -60,6 +60,17 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - The synthetic data should sometimes use different entities so that the entity is not updated.
 - The target table should have an updated_at timestamp column.
 
+### Dashboard improvements 1
+- The grafana dashboard should have separate panels for throughput, lag, and error rates and then have a dropdown to switch between topics, consumer groups, and producers. The "Transactional cut producer throughput and errors", "At-least-once cut producer throughput and errors", "At-least-once cut producer throughput and errors", and "Transactional cut consumer lag, throughput and errors" do not really make sense.
+- Do some research on what Grafana panels typically looks like. What kinds of graph are used. And how they are laid out spatially on the screen. Overall we want to make the dashboard look more professional.
+- There should be a Producer Throughput panel with a dropdown for available producer client IDs. By default shows all producer client IDs.
+- There should be a Consumer Throughput panel with a dropdown for available consumer group IDs. By default shows all consumer group IDs.
+- There should be a Consumer Lag panel with a dropdown for available consumer group IDs. By default shows all consumer group IDs.
+- For status like queue depth or reconciliation count, it should appear as a counter, not a line graph. 
+- For health of service is should be a colored panel with green for healthy, red for unhealthy. With each component with health metrics with their own panel.
+- Remember that there duplicated panels between the two available dashboards. Those duplicated panel must remain identical to eachother after these changes. 
+- The panels that are in the improved dashboard and not in the base dashboard should remain only in the improved dashboard. 
+
 ## Constraints and Non-Goals
 - No authentication.
 
@@ -72,3 +83,4 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - The grafana dashboard should have separate panels for throughput, lag, and error rates and then have a dropdown to switch between topics, consumer groups, and producers. The "Transactional cut producer throughput and errors", "At-least-once cut producer throughput and errors", "At-least-once cut producer throughput and errors", and "Transactional cut consumer lag, throughput and errors" do not really make sense.
 - The production rate of messages can be cranked up a bit.
 - Topic naming is weird. The names do not make sense.
+- Consider adding streamslens https://github.com/muralibasani/streamlens or lenses https://lenses.io/community-edition

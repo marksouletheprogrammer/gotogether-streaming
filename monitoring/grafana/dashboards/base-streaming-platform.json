@@ -3,152 +3,284 @@
   "editable": true,
   "graphTooltip": 1,
   "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 23, "panels": [], "title": "Broker and registry", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 0},
-      "id": 1,
-      "targets": [{"expr": "up{job=\"kafka-broker\"}", "refId": "A"}],
-      "title": "Kafka broker availability",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "A zero rate means the broker is up and the cumulative byte counter did not grow during the selected window. Missing telemetry is shown as No data; use the Kafka availability panel to distinguish a down scrape target.",
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "Bps"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "description": "Five-minute producer record rate by client ID, filtered by Producer client ID. A zero rate is idle; missing telemetry is shown as No data. This is not broker byte throughput.",
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 1},
       "id": 2,
       "targets": [
-        {"expr": "rate(kafka_server_broker_topic_metrics_bytes_in_total[5m])", "legendFormat": "in", "refId": "A"},
-        {"expr": "rate(kafka_server_broker_topic_metrics_bytes_out_total[5m])", "legendFormat": "out", "refId": "B"}
+        {"expr": "sum by (client_id) (rate(mill_cuts_producer_records_sent_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "{{client_id}}", "refId": "A"},
+        {"expr": "sum by (client_id) (rate(mill_tool_events_producer_records_sent_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "{{client_id}}", "refId": "B"}
       ],
       "title": "Kafka throughput",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Mean broker request latency by request type in milliseconds. Missing telemetry is shown as No data.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ms"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 6},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 1},
       "id": 3,
-      "targets": [{"expr": "kafka_network_request_metrics_request_total_time_ms_mean", "refId": "A"}],
+      "targets": [{"expr": "kafka_network_request_metrics_request_total_time_ms_mean", "legendFormat": "{{request}}", "refId": "A"}],
       "title": "Kafka request latency",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Broker partitions below their expected replication level. Missing telemetry is shown as No data.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 6},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 1},
       "id": 4,
-      "targets": [{"expr": "kafka_server_under_replicated_partitions", "refId": "A"}],
+      "targets": [{"expr": "kafka_server_under_replicated_partitions", "legendFormat": "under-replicated", "refId": "A"}],
       "title": "Kafka under-replicated partitions",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 12},
-      "id": 5,
-      "targets": [{"expr": "up{job=\"schema-registry\"}", "refId": "A"}],
-      "title": "Schema Registry availability",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Schema Registry request rate per second. Missing telemetry is shown as No data.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 12},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 7},
       "id": 6,
-      "targets": [{"expr": "kafka_schema_registry_jersey_request_rate", "refId": "A"}],
+      "targets": [{"expr": "kafka_schema_registry_jersey_request_rate", "legendFormat": "requests", "refId": "A"}],
       "title": "Schema Registry requests per second",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Schema Registry request errors per second. Missing telemetry is shown as No data.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 18},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 7},
       "id": 7,
-      "targets": [{"expr": "kafka_schema_registry_jersey_request_error_rate", "refId": "A"}],
+      "targets": [{"expr": "kafka_schema_registry_jersey_request_error_rate", "legendFormat": "errors", "refId": "A"}],
       "title": "Schema Registry request errors per second",
       "type": "timeseries"
     },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13}, "id": 24, "panels": [], "title": "Producer activity", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Five-minute record send rate by producer client ID. A zero rate is idle; No data means the metric is unavailable.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 24},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 14},
       "id": 8,
       "targets": [
-        {"expr": "rate(mill_cuts_producer_records_sent_total{client_id=\"mill-cuts-transactional-producer\"}[1m])", "legendFormat": "sent", "refId": "A"},
-        {"expr": "rate(mill_cuts_producer_send_errors_total{client_id=\"mill-cuts-transactional-producer\"}[1m])", "legendFormat": "errors", "refId": "B"}
+        {"expr": "sum by (client_id) (rate(mill_cuts_producer_records_sent_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "cut {{client_id}}", "refId": "A"},
+        {"expr": "sum by (client_id) (rate(mill_tool_events_producer_records_sent_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "event {{client_id}}", "refId": "B"}
       ],
-      "title": "Transactional cut producer throughput and errors",
+      "title": "Producer throughput",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Five-minute producer send-error rate by producer client ID. A zero rate is idle; No data means the metric is unavailable.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 24},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 14},
       "id": 9,
       "targets": [
-        {"expr": "rate(mill_cuts_producer_records_sent_total{client_id=\"mill-cuts-at-least-once-producer\"}[1m])", "legendFormat": "sent", "refId": "A"},
-        {"expr": "rate(mill_cuts_producer_send_errors_total{client_id=\"mill-cuts-at-least-once-producer\"}[1m])", "legendFormat": "errors", "refId": "B"}
+        {"expr": "sum by (client_id) (rate(mill_cuts_producer_send_errors_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "cut {{client_id}}", "refId": "A"},
+        {"expr": "sum by (client_id) (rate(mill_tool_events_producer_send_errors_total{client_id=~\"${producer_client_id:regex}\"}[5m]))", "legendFormat": "event {{client_id}}", "refId": "B"}
       ],
-      "title": "At-least-once cut producer throughput and errors",
+      "title": "Producer send errors",
       "type": "timeseries"
     },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 20}, "id": 25, "panels": [], "title": "Consumer activity and lag", "type": "row"},
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 30},
+      "description": "Five-minute consumer record-processing rate by consumer group ID. A zero rate is caught up or idle; No data means the metric is unavailable.",
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 21},
       "id": 10,
       "targets": [
-        {"expr": "mill_cuts_consumer_group_lag{group_id=\"mill-cuts-transactional-consumer\"}", "legendFormat": "lag", "refId": "A"},
-        {"expr": "rate(mill_cuts_consumer_records_processed_total{group_id=\"mill-cuts-transactional-consumer\"}[1m])", "legendFormat": "processed", "refId": "B"},
-        {"expr": "rate(mill_cuts_consumer_processing_errors_total{group_id=\"mill-cuts-transactional-consumer\"}[1m])", "legendFormat": "errors", "refId": "C"}
+        {"expr": "sum by (group_id) (rate(mill_cuts_consumer_records_processed_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "cut {{group_id}}", "refId": "A"},
+        {"expr": "sum by (group_id) (rate(mill_tool_events_consumer_records_processed_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "event {{group_id}}", "refId": "B"}
       ],
-      "title": "Transactional cut consumer lag, throughput and errors",
+      "title": "Consumer throughput",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 30},
+      "description": "Five-minute consumer processing-error rate by consumer group ID. A zero rate is healthy only when the target is available; No data means telemetry is unavailable.",
+      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 21},
       "id": 11,
       "targets": [
-        {"expr": "mill_cuts_consumer_group_lag{group_id=\"mill-cuts-idempotent-consumer\"}", "legendFormat": "lag", "refId": "A"},
-        {"expr": "rate(mill_cuts_consumer_records_processed_total{group_id=\"mill-cuts-idempotent-consumer\"}[1m])", "legendFormat": "processed", "refId": "B"},
-        {"expr": "rate(mill_cuts_consumer_processing_errors_total{group_id=\"mill-cuts-idempotent-consumer\"}[1m])", "legendFormat": "errors", "refId": "C"}
+        {"expr": "sum by (group_id) (rate(mill_cuts_consumer_processing_errors_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "cut {{group_id}}", "refId": "A"},
+        {"expr": "sum by (group_id) (rate(mill_tool_events_consumer_processing_errors_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "event {{group_id}}", "refId": "B"}
       ],
-      "title": "Idempotent cut consumer lag, throughput and errors",
+      "title": "Consumer processing errors",
       "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 36},
-      "id": 12,
-      "targets": [
-        {"expr": "rate(mill_tool_events_producer_records_sent_total{client_id=\"mill-tool-events-producer\"}[1m])", "legendFormat": "sent", "refId": "A"},
-        {"expr": "rate(mill_tool_events_producer_send_errors_total{client_id=\"mill-tool-events-producer\"}[1m])", "legendFormat": "errors", "refId": "B"}
-      ],
-      "title": "Technician event producer throughput and errors",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Consumer lag summed across partitions by consumer group and topic. A zero is caught up; No data means lag telemetry is unavailable.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 36},
-      "id": 13,
-      "targets": [
-        {"expr": "mill_cuts_consumer_group_lag{group_id=\"mill-tool-events-consumer\"}", "legendFormat": "lag", "refId": "A"},
-        {"expr": "rate(mill_tool_events_consumer_records_processed_total{group_id=\"mill-tool-events-consumer\"}[1m])", "legendFormat": "handled", "refId": "B"},
-        {"expr": "rate(mill_tool_events_consumer_processing_errors_total{group_id=\"mill-tool-events-consumer\"}[1m])", "legendFormat": "errors", "refId": "C"}
-      ],
-      "title": "Technician event consumer lag, throughput and errors",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 21},
+      "id": 12,
+      "targets": [{"expr": "sum by (group_id, topic) (mill_cuts_consumer_group_lag{group_id=~\"${consumer_group_id:regex}\",topic=~\"${topic:regex}\"})", "legendFormat": "{{group_id}} / {{topic}}", "refId": "A"}],
+      "title": "Consumer group lag",
       "type": "timeseries"
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}, "id": 26, "panels": [], "title": "Component health", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 28},
+      "id": 13,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"kafka-broker\"}", "refId": "A"}],
+      "title": "Kafka broker health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 28},
+      "id": 14,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"schema-registry\"}", "refId": "A"}],
+      "title": "Schema Registry health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 28},
+      "id": 15,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-cuts-transactional-producer\"}", "refId": "A"}],
+      "title": "Transactional cut producer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 32},
+      "id": 16,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-cuts-at-least-once-producer\"}", "refId": "A"}],
+      "title": "At-least-once cut producer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 32},
+      "id": 17,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-cuts-transactional-consumer\"}", "refId": "A"}],
+      "title": "Transactional cut consumer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 32},
+      "id": 18,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-cuts-idempotent-consumer\"}", "refId": "A"}],
+      "title": "Idempotent cut consumer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 36},
+      "id": 19,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-cuts-group-lag\"}", "refId": "A"}],
+      "title": "Consumer lag exporter health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 36},
+      "id": 20,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-tool-events-producer\"}", "refId": "A"}],
+      "title": "Technician event producer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 36},
+      "id": 21,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-tool-events-consumer\"}", "refId": "A"}],
+      "title": "Technician event consumer health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Prometheus scrape-target health. Healthy is green, unhealthy is red, and unavailable telemetry is gray.",
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}, "1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"}, {"options": {"match": "null", "result": {"color": "gray", "index": 2, "text": "Unavailable"}}, "type": "special"}], "noValue": "Unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 40},
+      "id": 22,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "up{job=\"mill-tool-events-outcomes\"}", "refId": "A"}],
+      "title": "Event outcomes exporter health",
+      "type": "stat"
     }
   ],
   "schemaVersion": 39,
   "tags": ["kafka", "schema-registry", "cnc-cuts"],
-  "templating": {"list": []},
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values({__name__=~\"mill_(cuts|tool_events)_producer_records_sent_total\"}, client_id)",
+        "includeAll": true,
+        "label": "Producer client ID",
+        "multi": true,
+        "name": "producer_client_id",
+        "options": [],
+        "query": "label_values({__name__=~\"mill_(cuts|tool_events)_producer_records_sent_total\"}, client_id)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values({__name__=~\"mill_(cuts|tool_events)_consumer_records_processed_total\"}, group_id)",
+        "includeAll": true,
+        "label": "Consumer group ID",
+        "multi": true,
+        "name": "consumer_group_id",
+        "options": [],
+        "query": "label_values({__name__=~\"mill_(cuts|tool_events)_consumer_records_processed_total\"}, group_id)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(mill_cuts_consumer_group_lag, topic)",
+        "includeAll": true,
+        "label": "Topic",
+        "multi": true,
+        "name": "topic",
+        "options": [],
+        "query": "label_values(mill_cuts_consumer_group_lag, topic)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
   "time": {"from": "now-1h", "to": "now"},
   "timezone": "browser",
   "title": "Base Streaming Platform",
