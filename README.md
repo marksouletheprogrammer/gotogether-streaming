@@ -6,7 +6,8 @@ A local Docker Compose streaming demo for CNC cut data and technician events. Th
 
 - Docker Engine or Docker Desktop with the Compose plugin; first startup needs internet access to pull pinned images and build the checksum-verified JMX exporter.
 - Python 3.13 or newer for the contract and smoke checks.
-- About 4 GiB of memory available to Docker and free localhost ports 5432, 8080, 8081, 9090, 9092, and 3000.
+- About 4 GiB of memory available to Docker and free localhost ports 5432, 8080, 8081, 9090, 9092, 3000, and 5000.
+- On first startup, Docker needs internet access and git-build-context support (a recent Compose with BuildKit) to clone and build StreamLens from its pinned upstream commit; the image is cached afterwards.
 
 ## Static checks
 
@@ -93,6 +94,17 @@ curl http://localhost:8081/subjects/mill-cuts-transactional-source-value/version
 curl http://localhost:8081/subjects/mill-tool-events-source-value/versions/latest
 ```
 
+### Pipeline topology graph
+
+StreamLens runs at `http://localhost:5000` as part of the default stack. The topology snapshot refreshes about once a minute, so the graph can lag startup briefly; reload the page if it looks empty.
+
+1. Open `http://localhost:5000`.
+2. The `local` cluster is already listed and connected to the broker, Schema Registry, and Prometheus. Open it — no manual registration is needed.
+3. In the topology view, expect producer nodes `mill-cuts-transactional-producer`, `mill-cuts-at-least-once-producer`, and `mill-tool-events-producer` with edges to their source topics (`mill-cuts-transactional-source`, `mill-cuts-replay-source`, `mill-tool-events-source`), then on to consumer groups `mill-cuts-transactional-consumer`, `mill-cuts-idempotent-consumer`, and `mill-tool-events-consumer`.
+4. Also expect schema nodes attached to the topics whose values use them, the `mill-cuts-committed` topic written by the transactional consumer, and the `mill-tool-events-dlq` topic.
+
+Producers are detected from the `kafka_producer_topic_metrics_record_send_total` Prometheus series exported by the app JMX agent, so a producer appears once it has sent at least one record and stays listed while its process runs. StreamLens is read-only against Kafka: producing from its UI is disabled.
+
 | Service | Address |
 | --- | --- |
 | Kafka from the host | `127.0.0.1:9092` |
@@ -101,6 +113,7 @@ curl http://localhost:8081/subjects/mill-tool-events-source-value/versions/lates
 | AKHQ | `http://localhost:8080` |
 | Prometheus | `http://localhost:9090` |
 | Grafana | `http://localhost:3000` |
+| StreamLens | `http://localhost:5000` |
 | PostgreSQL | `localhost:5432` |
 
 PostgreSQL is published on loopback at `localhost:5432`; Compose services use `postgres:5432`. The local demo uses trust authentication and has no password. Example queries:

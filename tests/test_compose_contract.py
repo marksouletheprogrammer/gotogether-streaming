@@ -194,6 +194,26 @@ class ComposeContractTests(unittest.TestCase):
         self.assertEqual(akhq["depends_on"]["broker"]["condition"], "service_healthy")
         self.assertEqual(akhq["depends_on"]["schema-registry"]["condition"], "service_healthy")
 
+    def test_streamlens_is_default_started_pinned_to_git_commit_and_preconfigured(self):
+        service = self.services["streamlens"]
+        self.assertIsNone(service.get("profiles"))
+        self.assertEqual(service["restart"], "unless-stopped")
+        self.assertEqual(service["networks"], ["streaming"])
+        self.assertEqual(service["image"], "local/streamlens:8b1cdd1")
+        build = service["build"]
+        self.assertEqual(
+            build["context"],
+            "https://github.com/muralibasani/streamlens.git#8b1cdd19ac120d9b0f81e80e7510ea05c13e4e64",
+        )
+        self.assertEqual(build["dockerfile"], "container/Dockerfile")
+        self.assertTrue(any(str(port).startswith("127.0.0.1:5000:") for port in service["ports"]))
+        self.assertEqual(service["environment"]["CLUSTERS_JSON"], "/config/clusters.json")
+        self.assertIn("./monitoring/streamlens/clusters.json:/config/clusters.json:ro", service["volumes"])
+        self.assertIn("/health", " ".join(service["healthcheck"]["test"]))
+        self.assertEqual(service["depends_on"]["broker"]["condition"], "service_healthy")
+        self.assertEqual(service["depends_on"]["schema-registry"]["condition"], "service_healthy")
+        self.assertEqual(service["depends_on"]["prometheus"]["condition"], "service_started")
+
     def test_long_running_services_share_restart_and_network_settings(self):
         for name in ("broker", "schema-registry", "akhq"):
             with self.subTest(service=name):

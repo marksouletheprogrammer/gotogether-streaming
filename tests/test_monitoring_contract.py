@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -353,6 +354,34 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertEqual(staleness["fieldConfig"]["defaults"]["unit"], "s")
         self.assertEqual(staleness["fieldConfig"]["defaults"]["noValue"], "No data")
 
+    def test_streamlens_cluster_is_preregistered_readonly_and_dashboards_untouched(self):
+        clusters_path = MONITORING / "streamlens" / "clusters.json"
+        self.assertTrue(clusters_path.is_file(), f"Missing StreamLens cluster config: {clusters_path}")
+        clusters = json.loads(clusters_path.read_text())["clusters"]
+        cluster = next(entry for entry in clusters if entry.get("name") == "local")
+        self.assertEqual(cluster["bootstrapServers"], "broker:29092")
+        self.assertEqual(cluster["schemaRegistryUrl"], "http://schema-registry:8081")
+        self.assertEqual(cluster["prometheusUrl"], "http://prometheus:9090")
+        self.assertEqual(cluster["securityProtocol"], "PLAINTEXT")
+        self.assertFalse(cluster["enableKafkaEventProduceFromUi"])
+        self.assertNotIn("jmxHost", cluster)
+        self.assertNotIn("jmxPort", cluster)
+
+        config = yaml.safe_load((MONITORING / "cut-app-jmx.yml").read_text())
+        self.assertIn("kafka.producer:type=producer-topic-metrics,*", config["includeObjectNames"])
+        rule = next(
+            rule for rule in config["rules"]
+            if rule["name"] == "kafka_producer_topic_metrics_record_send_total"
+        )
+        self.assertEqual(rule["type"], "COUNTER")
+        self.assertEqual(rule["labels"], {"client_id": "$1", "topic": "$2"})
+
+        status = subprocess.run(
+            ["git", "-C", str(ROOT), "status", "--porcelain", "--", "monitoring/grafana/dashboards"],
+            capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(status.stdout.strip(), "", f"Grafana dashboards changed: {status.stdout}")
+
     def test_metrics_services_are_loopback_published_with_disposable_storage(self):
         services = self.compose["services"]
         prometheus = services["prometheus"]
@@ -372,16 +401,17 @@ class MonitoringContractTests(unittest.TestCase):
             for panel in self.dashboard["panels"]
             for target in panel.get("targets", [])
         }
-        broker_bytes = {
+        not_on_dashboard = {
             "kafka_server_broker_topic_metrics_bytes_in_total",
             "kafka_server_broker_topic_metrics_bytes_out_total",
+            "kafka_producer_topic_metrics_record_send_total",
         }
         for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml", "cut-app-jmx.yml"):
             rules = yaml.safe_load((MONITORING / filename).read_text())["rules"]
             for rule in rules:
                 with self.subTest(metric=rule["name"]):
                     present = any(rule["name"] in expression for expression in expressions)
-                    self.assertEqual(present, rule["name"] not in broker_bytes)
+                    self.assertEqual(present, rule["name"] not in not_on_dashboard)
 
         traffic = next(panel for panel in self.dashboard["panels"] if panel["title"] == "Kafka throughput")
         self.assertEqual(traffic["fieldConfig"]["defaults"]["noValue"], "No data")

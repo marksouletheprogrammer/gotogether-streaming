@@ -475,6 +475,30 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
 
+  streamlens:
+    <<: *service-defaults
+    image: local/streamlens:8b1cdd1
+    build:
+      context: https://github.com/muralibasani/streamlens.git#8b1cdd19ac120d9b0f81e80e7510ea05c13e4e64
+      dockerfile: container/Dockerfile
+    mem_limit: 512m
+    depends_on:
+      <<: [*broker-ready, *registry-ready]
+      prometheus:
+        condition: service_started
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      CLUSTERS_JSON: /config/clusters.json
+    volumes:
+      - ./monitoring/streamlens/clusters.json:/config/clusters.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:5000/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 volumes:
   kafka_data:
   postgres_data:

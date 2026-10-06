@@ -3,6 +3,7 @@ lowercaseOutputLabelNames: true
 includeObjectNames:
   - "com.improving.gotogether.cuts:type=CutMetrics,*"
   - "com.improving.gotogether.events:type=EventMetrics,*"
+  - "kafka.producer:type=producer-topic-metrics,*"
 rules:
   - pattern: 'com.improving.gotogether.cuts<identity="([^"]+)", role=producer, type=CutMetrics><>RecordsSentTotal'
     name: mill_cuts_producer_records_sent_total
@@ -44,3 +45,9 @@ rules:
     type: COUNTER
     labels:
       group_id: "$1"
+  - pattern: 'kafka.producer<type=producer-topic-metrics, client-id=([^"]+), topic=([^"]+)><>record-send-total'
+    name: kafka_producer_topic_metrics_record_send_total
+    type: COUNTER
+    labels:
+      client_id: "$1"
+      topic: "$2"

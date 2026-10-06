@@ -71,6 +71,13 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - Remember that there duplicated panels between the two available dashboards. Those duplicated panel must remain identical to eachother after these changes. 
 - The panels that are in the improved dashboard and not in the base dashboard should remain only in the improved dashboard. 
 
+### Add visual graph
+- We want the user to be able to visualize the streams being stood up by this project.
+- Use https://github.com/muralibasani/streamlens as the visualization tool.
+- Streamlens should run on docker and start up with the other applications.
+- Configure streamlens so that it will be aware of the producers and consumers. The user should be able to see the full end-to-end for all pipelines running in this project.
+- This does not replace any existing dashboard or visualization in this project. It is just an additional one.
+
 ## Constraints and Non-Goals
 - No authentication.
 
@@ -82,5 +89,5 @@ Synthetic data should be generated from producers in this system. Reference DATA
 ## Follow up for future enhancements
 - The grafana dashboard should have separate panels for throughput, lag, and error rates and then have a dropdown to switch between topics, consumer groups, and producers. The "Transactional cut producer throughput and errors", "At-least-once cut producer throughput and errors", "At-least-once cut producer throughput and errors", and "Transactional cut consumer lag, throughput and errors" do not really make sense.
 - The production rate of messages can be cranked up a bit.
-- Topic naming is weird. The names do not make sense.
-- Consider adding streamslens https://github.com/muralibasani/streamlens or lenses https://lenses.io/community-edition
+- schemas for the two tables do not match
+- messages should randomly fail sometimes but not send to DLQ

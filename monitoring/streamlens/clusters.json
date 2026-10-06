@@ -1,0 +1,14 @@
+{
+  "clusters": [
+    {
+      "id": 1,
+      "name": "local",
+      "clusterType": "Apache Kafka",
+      "bootstrapServers": "broker:29092",
+      "schemaRegistryUrl": "http://schema-registry:8081",
+      "prometheusUrl": "http://prometheus:9090",
+      "securityProtocol": "PLAINTEXT",
+      "enableKafkaEventProduceFromUi": false
+    }
+  ]
+}
