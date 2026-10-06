@@ -309,6 +309,36 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Consumer lag summed across partitions by consumer group and topic. A zero is caught up; No data means lag telemetry is unavailable.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum by (group_id, topic) (mill_cuts_consumer_group_lag{group_id=~\"${consumer_group_id:regex}\",topic=~\"${topic:regex}\"})",
+          "legendFormat": "{{group_id}} / {{topic}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Consumer group lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "Five-minute consumer processing-error rate by consumer group ID. A zero rate is healthy only when the target is available; No data means telemetry is unavailable.",
       "fieldConfig": {
         "defaults": {
@@ -320,8 +350,8 @@
       "gridPos": {
         "h": 6,
         "w": 8,
-        "x": 8,
-        "y": 21
+        "x": 16,
+        "y": 27
       },
       "id": 11,
       "targets": [
@@ -340,11 +370,24 @@
       "type": "timeseries"
     },
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 30,
+      "panels": [],
+      "title": "Event outcomes",
+      "type": "row"
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Consumer lag summed across partitions by consumer group and topic. A zero is caught up; No data means lag telemetry is unavailable.",
+      "description": "Retained DLQ Kafka records, including duplicates. A healthy zero is shown as zero; unavailable Kafka collection is shown separately.",
       "fieldConfig": {
         "defaults": {
           "noValue": "No data",
@@ -355,18 +398,106 @@
       "gridPos": {
         "h": 6,
         "w": 8,
-        "x": 16,
-        "y": 21
+        "x": 0,
+        "y": 34
       },
-      "id": 12,
+      "id": 27,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
       "targets": [
         {
-          "expr": "sum by (group_id, topic) (mill_cuts_consumer_group_lag{group_id=~\"${consumer_group_id:regex}\",topic=~\"${topic:regex}\"})",
-          "legendFormat": "{{group_id}} / {{topic}}",
+          "expr": "mill_tool_events_dlq_topic_length",
+          "legendFormat": "retained records",
           "refId": "A"
         }
       ],
-      "title": "Consumer group lag",
+      "title": "Dead-letter topic length",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Database rows whose processed flag is false. This is independent of the Kafka DLQ topic length; a healthy zero is distinct from unavailable PostgreSQL collection.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "id": 28,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "mill_tool_events_unreconciled",
+          "legendFormat": "unprocessed rows",
+          "refId": "A"
+        }
+      ],
+      "title": "Unreconciled event rows",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Mean age in seconds of the latest successfully updated row for each unique tool instance. Missing rows or failed database collection remain unavailable.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "id": 29,
+      "targets": [
+        {
+          "expr": "mill_tool_events_average_staleness_seconds",
+          "legendFormat": "average staleness",
+          "refId": "A"
+        }
+      ],
+      "title": "Average entity staleness",
       "type": "timeseries"
     },
     {
@@ -375,7 +506,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 40
       },
       "id": 26,
       "panels": [],
@@ -440,7 +571,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 28
+        "y": 41
       },
       "id": 13,
       "options": {
@@ -524,7 +655,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 28
+        "y": 41
       },
       "id": 14,
       "options": {
@@ -608,7 +739,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 28
+        "y": 41
       },
       "id": 15,
       "options": {
@@ -692,7 +823,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 32
+        "y": 45
       },
       "id": 16,
       "options": {
@@ -776,7 +907,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 32
+        "y": 45
       },
       "id": 17,
       "options": {
@@ -860,7 +991,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 32
+        "y": 45
       },
       "id": 18,
       "options": {
@@ -944,7 +1075,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 36
+        "y": 49
       },
       "id": 19,
       "options": {
@@ -1028,7 +1159,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 36
+        "y": 49
       },
       "id": 20,
       "options": {
@@ -1112,7 +1243,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 36
+        "y": 49
       },
       "id": 21,
       "options": {
@@ -1196,7 +1327,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 40
+        "y": 53
       },
       "id": 22,
       "options": {
@@ -1221,230 +1352,6 @@
       ],
       "title": "Event outcomes exporter health",
       "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Retained DLQ Kafka records, including duplicates. A healthy zero is shown as zero; unavailable Kafka collection is shown separately.",
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No data",
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kafka collection healthy"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "0": {
-                        "color": "red",
-                        "index": 1,
-                        "text": "Unavailable"
-                      },
-                      "1": {
-                        "color": "green",
-                        "index": 0,
-                        "text": "Healthy"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 44
-      },
-      "id": 27,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "expr": "mill_tool_events_dlq_topic_length",
-          "legendFormat": "retained records",
-          "refId": "A"
-        },
-        {
-          "expr": "mill_tool_events_dlq_collection_success",
-          "legendFormat": "Kafka collection healthy",
-          "refId": "B"
-        }
-      ],
-      "title": "Dead-letter topic length",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Database rows whose processed flag is false. This is independent of the Kafka DLQ topic length; a healthy zero is distinct from unavailable PostgreSQL collection.",
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No data",
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PostgreSQL collection healthy"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "0": {
-                        "color": "red",
-                        "index": 1,
-                        "text": "Unavailable"
-                      },
-                      "1": {
-                        "color": "green",
-                        "index": 0,
-                        "text": "Healthy"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 44
-      },
-      "id": 28,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "expr": "mill_tool_events_unreconciled",
-          "legendFormat": "unprocessed rows",
-          "refId": "A"
-        },
-        {
-          "expr": "mill_tool_events_outcome_collection_success",
-          "legendFormat": "PostgreSQL collection healthy",
-          "refId": "B"
-        }
-      ],
-      "title": "Unreconciled event rows",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Mean age in seconds of the latest successfully updated row for each unique tool instance. Missing rows or failed database collection remain unavailable.",
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No data",
-          "unit": "s"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PostgreSQL collection healthy"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "0": {
-                        "color": "red",
-                        "index": 1,
-                        "text": "Unavailable"
-                      },
-                      "1": {
-                        "color": "green",
-                        "index": 0,
-                        "text": "Healthy"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
-              },
-              {
-                "id": "unit",
-                "value": "short"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 44
-      },
-      "id": 29,
-      "targets": [
-        {
-          "expr": "mill_tool_events_average_staleness_seconds",
-          "legendFormat": "average staleness",
-          "refId": "A"
-        },
-        {
-          "expr": "mill_tool_events_outcome_collection_success",
-          "legendFormat": "PostgreSQL collection healthy",
-          "refId": "B"
-        }
-      ],
-      "title": "Average entity staleness",
-      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
@@ -1525,7 +1432,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "Metrics That Matter",
+  "title": "CNC Event Outcomes (Improved)",
   "uid": "metrics-that-matter",
   "version": 1
 }

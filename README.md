@@ -86,14 +86,14 @@ On successful processing, the consumer updates the latest state for a `(machine_
 
 Grafana provisions two dashboards at `http://localhost:3000`:
 
-- **Base Streaming Platform** shows broker, Schema Registry, cut, and conventional event producer/consumer throughput, errors, and lag.
-- **Metrics That Matter** contains those same baseline panels plus the three outcome metrics below.
+- **CNC Streaming Operations** shows broker, Schema Registry, cut, and conventional event producer/consumer throughput, lag, and component health. Consumer processing errors are not shown on this operational view.
+- **CNC Event Outcomes (Improved)** contains all operational panels from CNC Streaming Operations plus the consumer processing-error time series and three outcome metrics below, organized in a dedicated **Event outcomes** row.
 
-Both dashboards share three selectors: **Producer client ID**, **Consumer group ID**, and **Topic**; each defaults to All available values. **Kafka throughput** and **Producer throughput** intentionally show the same producer records-per-second series by client ID, not broker byte rates; both and **Producer send errors** follow the producer selector. Consumer throughput, processing-error, and lag panels follow the consumer-group selector. Topic filters only the topic-labeled lag panel.
+Both dashboards share three selectors: **Producer client ID**, **Consumer group ID**, and **Topic**; each defaults to All available values. **Kafka throughput** and **Producer throughput** intentionally show the same producer records-per-second series by client ID, not broker byte rates; both and **Producer send errors** follow the producer selector. Consumer throughput and lag panels follow the consumer-group selector; consumer processing errors appear only on CNC Event Outcomes (Improved) and also follow the consumer-group selector. Topic filters only the topic-labeled lag panel.
 
-The Base Streaming Platform dashboard is organized into **Broker and registry**, **Producer activity**, **Consumer activity and lag**, and **Component health** sections. Each health panel reports **Healthy (green)** for a reachable target, **Unhealthy (red)** for a failed scrape, and **Unavailable (gray)** when health telemetry is missing.
+The CNC Streaming Operations dashboard is organized into **Broker and registry**, **Producer activity**, **Consumer activity and lag**, and **Component health** sections. Each health panel reports **Healthy (green)** for a reachable target, **Unhealthy (red)** for a failed scrape, and **Unavailable (gray)** when health telemetry is missing.
 
-Metrics That Matter adds exactly three outcome panels: **Dead-letter topic length** and **Unreconciled event rows** are stat panels, while **Average entity staleness** remains a time series measured in seconds. A healthy zero count is distinct from missing or unavailable source telemetry.
+CNC Event Outcomes (Improved) adds a dedicated **Event outcomes** row containing exactly three outcome panels before the Component health section: **Dead-letter topic length** and **Unreconciled event rows** are stat panels, while **Average entity staleness** is a time series measured in seconds. Each outcome panel contains only its own metric value; collection-health series are not embedded in outcome panels. A healthy zero count is distinct from missing or unavailable source telemetry.
 
 These metrics have separate sources and meanings:
 
@@ -101,7 +101,7 @@ These metrics have separate sources and meanings:
 - `mill_tool_events_unreconciled` is a PostgreSQL count of reconciliation rows with `processed = false`. It includes failed sends, DLQ events, and silently dropped events; it is not calculated from Kafka offsets or DLQ length. **Silently dropped events increase this count without increasing the DLQ topic length**, demonstrating the observability gap.
 - `mill_tool_events_average_staleness_seconds` is the average of `now - updated_at` over the current target row for each unique tool instance. With no target rows, Grafana shows no data rather than zero.
 
-Kafka DLQ collection and PostgreSQL outcome collection each expose their own health metric, so an unavailable source is not presented as a healthy zero. The provisioned dashboard files are `base-streaming-platform.json` and `metrics-that-matter.json`; the latter is derived from the former with `python3 scripts/derive_metrics_that_matter_dashboard.py --check` verifying panel parity.
+Kafka DLQ collection and PostgreSQL outcome collection each expose their own health metric, so an unavailable source is not presented as a healthy zero. The provisioned dashboard files are `base-streaming-platform.json` and `metrics-that-matter.json`; the latter is derived from the former with `python3 scripts/derive_metrics_that_matter_dashboard.py --check` verifying shared-panel parity and outcome-panel exclusivity.
 
 ## Inspect the stack
 

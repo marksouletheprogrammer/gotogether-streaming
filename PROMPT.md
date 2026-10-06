@@ -78,6 +78,7 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - Configure streamlens so that it will be aware of the producers and consumers. The user should be able to see the full end-to-end for all pipelines running in this project.
 - This does not replace any existing dashboard or visualization in this project. It is just an additional one.
 
+
 ### Data improvements 1
 - These streams do not produce a lot of data, and the producers stop at some point.
 - This change should greatly increase how much data is being produced.
@@ -86,6 +87,12 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - The mill_cuts_idempotent_writes and the mill_cuts_transactional_writes do not share the same columns. They should be exactly identical tables, just with different names.
 - This app will randomly send some messages to the DLQ. In addition, a small, but noticeable, percentage of messages should fail but NOT be sent to DLQ, just silently dropped. 
 
+### Dashboard improvements 2
+- Move Consumer processing errors to the metrics that matter dashboard exclusively. 
+- Panels "Unreconciled event rows", "Average entity staleness", "Dead-letter topic length" should have their own row above the Component Health section.
+- Panels "Unreconciled event rows", "Average entity staleness", "Dead-letter topic length" all have a componet health section as part of the panel. Please remove those from all three. 
+- Rename both dashboards to something more appropriate to the domain. But make it clear the the metrics that matter dashboard is (improved).
+
 ## Constraints and Non-Goals
 - No authentication.
 
@@ -93,7 +100,3 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - The user will request one feature at a time (e.g., `Base Project, include greenfield scaffolding`).
 - Generate the OpenSpec proposal/spec/design/tasks artifacts for only the requested feature.
 - Do not edit or rewrite `DATA.md` unless the user explicitly asks for changes to that file.
-
-## Follow up for future enhancements
-- move Consumer Processing Errors to be exclusive to metrics that matter dashboard.
-- 

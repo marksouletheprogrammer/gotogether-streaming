@@ -100,22 +100,9 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "Five-minute consumer processing-error rate by consumer group ID. A zero rate is healthy only when the target is available; No data means telemetry is unavailable.",
-      "fieldConfig": {"defaults": {"noValue": "No data", "unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 21},
-      "id": 11,
-      "targets": [
-        {"expr": "sum by (group_id) (rate(mill_cuts_consumer_processing_errors_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "cut {{group_id}}", "refId": "A"},
-        {"expr": "sum by (group_id) (rate(mill_tool_events_consumer_processing_errors_total{group_id=~\"${consumer_group_id:regex}\"}[5m]))", "legendFormat": "event {{group_id}}", "refId": "B"}
-      ],
-      "title": "Consumer processing errors",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "description": "Consumer lag summed across partitions by consumer group and topic. A zero is caught up; No data means lag telemetry is unavailable.",
       "fieldConfig": {"defaults": {"noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 21},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 21},
       "id": 12,
       "targets": [{"expr": "sum by (group_id, topic) (mill_cuts_consumer_group_lag{group_id=~\"${consumer_group_id:regex}\",topic=~\"${topic:regex}\"})", "legendFormat": "{{group_id}} / {{topic}}", "refId": "A"}],
       "title": "Consumer group lag",
@@ -283,7 +270,7 @@
   },
   "time": {"from": "now-1h", "to": "now"},
   "timezone": "browser",
-  "title": "Base Streaming Platform",
+  "title": "CNC Streaming Operations",
   "uid": "base-streaming-platform",
   "version": 1
 }

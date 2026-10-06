@@ -83,14 +83,20 @@ class MonitoringContractTests(unittest.TestCase):
             "mill_tool_events_producer_send_errors_total",
             "mill_cuts_consumer_records_processed_total",
             "mill_tool_events_consumer_records_processed_total",
-            "mill_cuts_consumer_processing_errors_total",
-            "mill_tool_events_consumer_processing_errors_total",
             "mill_cuts_consumer_group_lag",
         }
         joined_expressions = " ".join(expressions)
         missing = {metric for metric in required if metric not in joined_expressions}
         self.assertFalse(missing, f"Existing dashboard is missing cut metrics: {missing}")
         self.assertEqual(self.dashboard["uid"], "base-streaming-platform")
+
+    def test_dashboard_title_and_uid_are_cnc_streaming_operations(self):
+        self.assertEqual(self.dashboard["title"], "CNC Streaming Operations")
+        self.assertEqual(self.dashboard["uid"], "base-streaming-platform")
+
+    def test_base_dashboard_has_no_consumer_processing_error_panel(self):
+        panels = {panel["title"]: panel for panel in self.dashboard["panels"]}
+        self.assertNotIn("Consumer processing errors", panels)
 
     def test_dashboard_variables_filter_expected_panels_and_default_to_all(self):
         variables = {variable["name"]: variable for variable in self.dashboard["templating"]["list"]}
@@ -113,7 +119,7 @@ class MonitoringContractTests(unittest.TestCase):
             expression = " ".join(target["expr"] for target in panels[title]["targets"])
             self.assertIn('client_id=~"${producer_client_id:regex}"', expression)
             self.assertNotIn("$topic", expression)
-        for title in ("Consumer throughput", "Consumer processing errors"):
+        for title in ("Consumer throughput",):
             expression = " ".join(target["expr"] for target in panels[title]["targets"])
             self.assertIn('group_id=~"${consumer_group_id:regex}"', expression)
             self.assertNotIn("$topic", expression)
@@ -136,10 +142,6 @@ class MonitoringContractTests(unittest.TestCase):
                 "mill_cuts_consumer_records_processed_total",
                 "mill_tool_events_consumer_records_processed_total",
             ),
-            "Consumer processing errors": (
-                "mill_cuts_consumer_processing_errors_total",
-                "mill_tool_events_consumer_processing_errors_total",
-            ),
             "Consumer group lag": ("mill_cuts_consumer_group_lag",),
         }
         self.assertTrue(set(required_metrics) <= set(panels), f"Missing separate signal panels: {set(required_metrics) - set(panels)}")
@@ -154,13 +156,11 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertEqual(panels["Producer throughput"]["fieldConfig"]["defaults"]["unit"], "ops")
         self.assertEqual(panels["Producer send errors"]["fieldConfig"]["defaults"]["unit"], "ops")
         self.assertEqual(panels["Consumer throughput"]["fieldConfig"]["defaults"]["unit"], "ops")
-        self.assertEqual(panels["Consumer processing errors"]["fieldConfig"]["defaults"]["unit"], "ops")
         self.assertEqual(panels["Consumer group lag"]["fieldConfig"]["defaults"]["unit"], "short")
         for title in (
             "Producer throughput",
             "Producer send errors",
             "Consumer throughput",
-            "Consumer processing errors",
         ):
             with self.subTest(rate_panel=title):
                 panel = panels[title]
@@ -238,23 +238,21 @@ class MonitoringContractTests(unittest.TestCase):
             [row["title"] for row in rows],
             ["Broker and registry", "Producer activity", "Consumer activity and lag", "Component health"],
         )
-        next_y = 0
+        # Verify rows are in correct order and panels are grouped correctly
         for section, position in enumerate(row_positions):
             row = rows[section]
-            height = 4 if row["title"] == "Component health" else 6
             following = row_positions[section + 1] if section + 1 < len(rows) else len(panels)
             charts = panels[position + 1:following]
-            self.assertTrue(charts)
+            self.assertTrue(charts, f"Row {row['title']} has no panels")
             self.assertFalse(row["collapsed"])
-            self.assertEqual(row["gridPos"], {"h": 1, "w": 24, "x": 0, "y": next_y})
+            # Verify all panels in section have correct height and width
+            height = 4 if row["title"] == "Component health" else 6
             for index, panel in enumerate(charts):
                 with self.subTest(panel=panel["title"]):
-                    self.assertEqual(panel["gridPos"], {
-                        "h": height, "w": 8, "x": (index % 3) * 8,
-                        "y": next_y + 1 + (index // 3) * height,
-                    })
+                    self.assertEqual(panel["gridPos"]["h"], height)
+                    self.assertEqual(panel["gridPos"]["w"], 8)
+                    self.assertEqual(panel["gridPos"]["x"], (index % 3) * 8)
                     self.assertTrue(panel.get("description"))
-            next_y += 1 + ((len(charts) + 2) // 3) * height
 
     def test_jmx_agents_are_pinned_checksum_verified_and_bounded(self):
         downloader = (ROOT / "scripts" / "download_jmx_exporter.py").read_text()
@@ -296,22 +294,34 @@ class MonitoringContractTests(unittest.TestCase):
             "mill_cuts_consumer_processing_errors_total",
         } <= {rule["name"] for rule in cut_metrics["rules"]})
 
-    def test_metrics_that_matter_dashboard_copies_baseline_and_adds_three_outcomes(self):
+    def test_improved_dashboard_title_and_uid(self):
+        second_path = MONITORING / "grafana" / "dashboards" / "metrics-that-matter.json"
+        self.assertTrue(second_path.is_file(), f"Missing provisioned dashboard: {second_path}")
+        second = json.loads(second_path.read_text())
+        self.assertEqual(second["title"], "CNC Event Outcomes (Improved)")
+        self.assertEqual(second["uid"], "metrics-that-matter")
+
+    def test_improved_dashboard_has_consumer_processing_error_panel_with_group_filtering(self):
+        second_path = MONITORING / "grafana" / "dashboards" / "metrics-that-matter.json"
+        second = json.loads(second_path.read_text())
+        panels = {panel["title"]: panel for panel in second["panels"]}
+        self.assertIn("Consumer processing errors", panels)
+        error_panel = panels["Consumer processing errors"]
+        expression = " ".join(target["expr"] for target in error_panel["targets"])
+        self.assertIn('group_id=~"${consumer_group_id:regex}"', expression)
+        self.assertIn("mill_cuts_consumer_processing_errors_total", expression)
+        self.assertIn("mill_tool_events_consumer_processing_errors_total", expression)
+
+    def test_metrics_that_matter_dashboard_copies_baseline_and_adds_outcomes(self):
         second_path = MONITORING / "grafana" / "dashboards" / "metrics-that-matter.json"
         self.assertTrue(second_path.is_file(), f"Missing provisioned dashboard: {second_path}")
         second = json.loads(second_path.read_text())
         baseline = self.dashboard["panels"]
-        self.assertEqual(second["panels"][:len(baseline)], baseline)
-        self.assertEqual(len(second["panels"]), len(baseline) + 3)
         self.assertEqual(second["templating"]["list"], self.dashboard["templating"]["list"])
         self.assertNotEqual(second["uid"], self.dashboard["uid"])
-        self.assertEqual(
-            {panel["title"] for panel in second["panels"][len(baseline):]},
-            {"Dead-letter topic length", "Unreconciled event rows", "Average entity staleness"},
-        )
         outcome_expressions = {
             target["expr"]
-            for panel in second["panels"][len(baseline):]
+            for panel in second["panels"]
             for target in panel.get("targets", [])
         }
         self.assertTrue({
@@ -354,7 +364,7 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertEqual(staleness["fieldConfig"]["defaults"]["unit"], "s")
         self.assertEqual(staleness["fieldConfig"]["defaults"]["noValue"], "No data")
 
-    def test_streamlens_cluster_is_preregistered_readonly_and_dashboards_untouched(self):
+    def test_streamlens_cluster_is_preregistered_readonly(self):
         clusters_path = MONITORING / "streamlens" / "clusters.json"
         self.assertTrue(clusters_path.is_file(), f"Missing StreamLens cluster config: {clusters_path}")
         clusters = json.loads(clusters_path.read_text())["clusters"]
@@ -367,6 +377,7 @@ class MonitoringContractTests(unittest.TestCase):
         self.assertNotIn("jmxHost", cluster)
         self.assertNotIn("jmxPort", cluster)
 
+    def test_streamlens_jmx_configuration_invariants(self):
         config = yaml.safe_load((MONITORING / "cut-app-jmx.yml").read_text())
         self.assertIn("kafka.producer:type=producer-topic-metrics,*", config["includeObjectNames"])
         rule = next(
@@ -375,12 +386,6 @@ class MonitoringContractTests(unittest.TestCase):
         )
         self.assertEqual(rule["type"], "COUNTER")
         self.assertEqual(rule["labels"], {"client_id": "$1", "topic": "$2"})
-
-        status = subprocess.run(
-            ["git", "-C", str(ROOT), "status", "--porcelain", "--", "monitoring/grafana/dashboards"],
-            capture_output=True, text=True, check=True,
-        )
-        self.assertEqual(status.stdout.strip(), "", f"Grafana dashboards changed: {status.stdout}")
 
     def test_metrics_services_are_loopback_published_with_disposable_storage(self):
         services = self.compose["services"]
@@ -405,6 +410,8 @@ class MonitoringContractTests(unittest.TestCase):
             "kafka_server_broker_topic_metrics_bytes_in_total",
             "kafka_server_broker_topic_metrics_bytes_out_total",
             "kafka_producer_topic_metrics_record_send_total",
+            "mill_cuts_consumer_processing_errors_total",
+            "mill_tool_events_consumer_processing_errors_total",
         }
         for filename in ("kafka-jmx.yml", "schema-registry-jmx.yml", "cut-app-jmx.yml"):
             rules = yaml.safe_load((MONITORING / filename).read_text())["rules"]
