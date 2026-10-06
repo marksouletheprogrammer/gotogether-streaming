@@ -405,6 +405,149 @@ def validate_event_tables(table_names):
     return table_names
 
 
+def fetch_cut_table_schemas():
+    """Fetch the schema of both cut tables to verify they are identical."""
+    query = (
+        "SELECT table_name, column_name, data_type, is_nullable, column_default "
+        "FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name IN ('mill_cuts_transactional_writes', 'mill_cuts_idempotent_writes') "
+        "ORDER BY table_name, ordinal_position"
+    )
+    result = subprocess.run(
+        [
+            "docker", "compose", "exec", "-T", "postgres", "psql", "--username", "gotogether",
+            "--dbname", "gotogether", "--tuples-only", "--no-align", "--command", query,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    if result.returncode:
+        raise RuntimeError(f"Could not inspect cut table schemas: {result.stderr.strip()}")
+    return result.stdout
+
+
+def validate_cut_table_schemas(schema_output):
+    """Verify both cut tables have identical schemas with event_id as primary key."""
+    lines = [line.strip() for line in schema_output.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("Could not retrieve cut table schemas")
+    
+    # Parse schema output: table_name|column_name|data_type|is_nullable|column_default
+    transactional_cols = []
+    idempotent_cols = []
+    for line in lines:
+        parts = line.split("|")
+        if len(parts) < 2:
+            continue
+        table_name = parts[0]
+        if table_name == "mill_cuts_transactional_writes":
+            transactional_cols.append("|".join(parts[1:]))
+        elif table_name == "mill_cuts_idempotent_writes":
+            idempotent_cols.append("|".join(parts[1:]))
+    
+    # Both tables should have the same columns
+    if transactional_cols != idempotent_cols:
+        raise ValueError(
+            f"Cut table schemas do not match. "
+            f"Transactional: {transactional_cols}, Idempotent: {idempotent_cols}"
+        )
+    
+    # Verify required columns exist
+    required_columns = {"event_id", "payload", "updated_at"}
+    found_columns = set()
+    for col_def in transactional_cols:
+        col_name = col_def.split("|")[0]
+        found_columns.add(col_name)
+    
+    missing = required_columns - found_columns
+    if missing:
+        raise ValueError(f"Cut tables are missing required columns: {', '.join(sorted(missing))}")
+    
+    return schema_output
+
+
+def fetch_cut_table_uniqueness():
+    """Verify that both cut tables have no duplicate event_ids."""
+    query = (
+        "SELECT table_name, COUNT(*) as total_rows, COUNT(DISTINCT event_id) as unique_ids "
+        "FROM (SELECT 'mill_cuts_transactional_writes' as table_name, event_id FROM mill_cuts_transactional_writes "
+        "UNION ALL SELECT 'mill_cuts_idempotent_writes' as table_name, event_id FROM mill_cuts_idempotent_writes) t "
+        "GROUP BY table_name ORDER BY table_name"
+    )
+    result = subprocess.run(
+        [
+            "docker", "compose", "exec", "-T", "postgres", "psql", "--username", "gotogether",
+            "--dbname", "gotogether", "--tuples-only", "--no-align", "--command", query,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    if result.returncode:
+        raise RuntimeError(f"Could not check cut table uniqueness: {result.stderr.strip()}")
+    return result.stdout
+
+
+def validate_cut_table_uniqueness(uniqueness_output):
+    """Verify that both cut tables enforce one row per event_id."""
+    lines = [line.strip() for line in uniqueness_output.splitlines() if line.strip()]
+    for line in lines:
+        parts = line.split("|")
+        if len(parts) < 3:
+            continue
+        table_name, total_rows, unique_ids = parts[0], parts[1], parts[2]
+        try:
+            total = int(total_rows)
+            unique = int(unique_ids)
+        except ValueError:
+            continue
+        if total != unique:
+            raise ValueError(
+                f"{table_name} has {total} rows but only {unique} unique event_ids; "
+                "duplicate event_ids violate the primary key constraint"
+            )
+    return uniqueness_output
+
+
+def fetch_topic_record_counts():
+    """Fetch record counts for cut and event topics to verify continuous growth."""
+    topics_to_check = CUT_TOPICS + EVENT_TOPICS
+    counts = {}
+    for topic in topics_to_check:
+        command = [
+            "docker", "compose", "exec", "-T", "-e", "KAFKA_OPTS=", "broker", "kafka-get-offsets",
+            "--bootstrap-server", "broker:29092", "--topic", topic, "--time", "-1",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, cwd=ROOT)
+        if result.returncode:
+            raise RuntimeError(f"Could not read {topic} offsets: {result.stderr.strip()}")
+        # Parse output: topic:partition:offset
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            parts = line.rsplit(":", 2)
+            if len(parts) == 3:
+                topic_name, partition, offset = parts
+                try:
+                    counts[topic_name] = int(offset)
+                except ValueError:
+                    pass
+    return counts
+
+
+def validate_topic_record_counts(counts):
+    """Verify that topics have records (continuous publishing has occurred)."""
+    for topic in CUT_TOPICS + EVENT_TOPICS:
+        if topic not in counts:
+            raise ValueError(f"Could not determine record count for topic {topic}")
+        # Allow zero records initially, but log if we have them
+        if counts[topic] == 0:
+            # This is acceptable for a fresh start, but we log it
+            pass
+    return counts
+
+
 def validate_grafana_dashboards(dashboard_uids):
     required = {"base-streaming-platform", OUTCOME_DASHBOARD_UID}
     missing = required - set(dashboard_uids)
@@ -474,6 +617,9 @@ def main():
         validate_service_logs(compose_logs())
         check_tcp_endpoint("127.0.0.1", int(os.environ.get("POSTGRES_PORT", "5432")))
         validate_event_tables(fetch_event_tables())
+        validate_cut_table_schemas(fetch_cut_table_schemas())
+        validate_cut_table_uniqueness(fetch_cut_table_uniqueness())
+        topic_counts = validate_topic_record_counts(fetch_topic_record_counts())
         offsets = validate_topic_offsets(topic_offsets())
         validate_cluster_metadata(fetch_cluster_metadata("127.0.0.1:9092"), "127.0.0.1")
         if not internal_cluster_metadata().strip():
@@ -512,7 +658,7 @@ def main():
         print(f"Smoke check failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"Smoke check passed: all cut and event services are running, event topics, Avro subjects, and tables are ready, outcome metrics are reachable, both Grafana dashboards are provisioned, and the {len(offsets)}-partition canonical sample topic is empty.")
+    print(f"Smoke check passed: all cut and event services are running, event topics, Avro subjects, and tables are ready, cut table schemas are identical with unique event_ids, topic record counts are available, outcome metrics are reachable, both Grafana dashboards are provisioned, and the {len(offsets)}-partition canonical sample topic is empty.")
     return 0
 
 

@@ -38,8 +38,7 @@ public final class EventProducer {
         String topic = requiredEnvironment("EVENT_TOPIC");
         String clientId = requiredEnvironment("KAFKA_CLIENT_ID");
         String registryUrl = requiredEnvironment("SCHEMA_REGISTRY_URL");
-        int recordCount = positiveInteger("EVENT_RECORD_COUNT", 30);
-        long intervalMillis = positiveLong("EVENT_INTERVAL_MS", 2_000);
+        long intervalMillis = positiveLong("EVENT_INTERVAL_MS", 200);
         String brokers = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "broker:29092");
         String jdbcUrl = System.getenv().getOrDefault("POSTGRES_JDBC_URL", "jdbc:postgresql://postgres:5432/gotogether");
         String databaseUser = System.getenv().getOrDefault("POSTGRES_USER", "gotogether");
@@ -71,16 +70,21 @@ public final class EventProducer {
                 }
             });
 
-            for (int eventIndex = 1; eventIndex <= recordCount; eventIndex++) {
-                eventProducer.publish(eventIndex);
+            // Register shutdown hook for orderly shutdown
+            Thread shutdownHook = new Thread(() -> {
+                LOGGER.info("Shutdown signal received, stopping event producer");
+                Thread.currentThread().interrupt();
+            });
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+            // Continuous paced publishing until shutdown
+            for (long eventIndex = 1; !Thread.currentThread().isInterrupted(); eventIndex++) {
+                eventProducer.publish((int) eventIndex);
                 LOGGER.info("Published event " + eventIndex + " to " + topic);
-                if (eventIndex < recordCount) {
-                    sleep(intervalMillis);
-                }
+                sleep(intervalMillis);
             }
             producer.flush();
-            LOGGER.info(() -> "Finished publishing " + recordCount + " events to " + topic);
-            keepAliveUntilShutdown();
+            LOGGER.info("Event producer finished");
         }
     }
 

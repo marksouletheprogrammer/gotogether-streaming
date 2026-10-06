@@ -78,6 +78,14 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - Configure streamlens so that it will be aware of the producers and consumers. The user should be able to see the full end-to-end for all pipelines running in this project.
 - This does not replace any existing dashboard or visualization in this project. It is just an additional one.
 
+### Data improvements 1
+- These streams do not produce a lot of data, and the producers stop at some point.
+- This change should greatly increase how much data is being produced.
+- This change should also ensure that the producers keep producing indefinitely.
+- The requirement that both the idempotent and exactly once producers produce the same data is still active. 
+- The mill_cuts_idempotent_writes and the mill_cuts_transactional_writes do not share the same columns. They should be exactly identical tables, just with different names.
+- This app will randomly send some messages to the DLQ. In addition, a small, but noticeable, percentage of messages should fail but NOT be sent to DLQ, just silently dropped. 
+
 ## Constraints and Non-Goals
 - No authentication.
 
@@ -87,7 +95,5 @@ Synthetic data should be generated from producers in this system. Reference DATA
 - Do not edit or rewrite `DATA.md` unless the user explicitly asks for changes to that file.
 
 ## Follow up for future enhancements
-- The grafana dashboard should have separate panels for throughput, lag, and error rates and then have a dropdown to switch between topics, consumer groups, and producers. The "Transactional cut producer throughput and errors", "At-least-once cut producer throughput and errors", "At-least-once cut producer throughput and errors", and "Transactional cut consumer lag, throughput and errors" do not really make sense.
-- The production rate of messages can be cranked up a bit.
-- schemas for the two tables do not match
-- messages should randomly fail sometimes but not send to DLQ
+- move Consumer Processing Errors to be exclusive to metrics that matter dashboard.
+- 

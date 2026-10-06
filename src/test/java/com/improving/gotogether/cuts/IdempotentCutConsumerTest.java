@@ -56,4 +56,52 @@ class IdempotentCutConsumerTest {
         assertThrows(IllegalArgumentException.class, () -> consumer.process(invalid, () -> writes[0]++));
         assertEquals(0, writes[0]);
     }
+
+    @Test
+    void replayAfterDatabaseCommitBeforeOffsetCommitUpsertsByEventId() {
+        // Scenario: Replay after database commit before Kafka offset commit
+        // When replayed, the same event_id should not create a second row
+        Map<String, GenericRecord> rows = new HashMap<>();
+        List<String> calls = new ArrayList<>();
+        IdempotentCutConsumer consumer = new IdempotentCutConsumer(record -> {
+            calls.add("upsert");
+            rows.put(record.get("event_id").toString(), record);
+        });
+
+        GenericRecord firstRecord = new CutRecordGenerator().generate(1);
+        consumer.process(firstRecord, () -> calls.add("offset-1"));
+        
+        // Simulate replay: same event_id, should upsert not insert
+        consumer.process(firstRecord, () -> calls.add("offset-2"));
+
+        // Both writes should be for the same event_id (upsert behavior)
+        assertEquals(1, rows.size());
+        assertEquals(List.of("upsert", "offset-1", "upsert", "offset-2"), calls);
+    }
+
+    @Test
+    void upsertChangedCutWithSameEventId() {
+        // Scenario: Upsert a changed cut with the same ID
+        // When a later cut with the same event_id arrives, it should replace the previous one
+        Map<String, GenericRecord> rows = new HashMap<>();
+        List<String> calls = new ArrayList<>();
+        IdempotentCutConsumer consumer = new IdempotentCutConsumer(record -> {
+            calls.add("upsert");
+            rows.put(record.get("event_id").toString(), record);
+        });
+
+        GenericRecord firstRecord = new CutRecordGenerator().generate(1);
+        GenericRecord secondRecord = new CutRecordGenerator().generate(2);
+        // Force same event_id to simulate a changed cut
+        secondRecord.put("event_id", firstRecord.get("event_id"));
+
+        consumer.process(firstRecord, () -> calls.add("offset-1"));
+        consumer.process(secondRecord, () -> calls.add("offset-2"));
+
+        // Only one row should exist (upsert), with the second record's values
+        assertEquals(1, rows.size());
+        GenericRecord stored = rows.get(firstRecord.get("event_id").toString());
+        assertEquals(2, ((GenericRecord) stored.get("payload")).get("cut_index"));
+        assertEquals(List.of("upsert", "offset-1", "upsert", "offset-2"), calls);
+    }
 }

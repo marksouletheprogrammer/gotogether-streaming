@@ -8,6 +8,7 @@ public final class EventConsumer {
     public enum Outcome {
         PROCESSED,
         DEAD_LETTERED,
+        SILENTLY_DROPPED,
         ALREADY_PROCESSED
     }
 
@@ -15,21 +16,39 @@ public final class EventConsumer {
 
     private final EventStateRepository repository;
     private final EventDeadLetterWriter deadLetterWriter;
-    private final double failureProbability;
+    private final double dlqProbability;
+    private final double silentDropProbability;
     private final DoubleSupplier random;
 
     public EventConsumer(
         EventStateRepository repository,
         EventDeadLetterWriter deadLetterWriter,
-        double failureProbability,
+        double dlqProbability,
         DoubleSupplier random
     ) {
-        if (!Double.isFinite(failureProbability) || failureProbability < 0 || failureProbability > 1) {
-            throw new IllegalArgumentException("failureProbability must be between zero and one");
+        this(repository, deadLetterWriter, dlqProbability, 0.0, random);
+    }
+
+    public EventConsumer(
+        EventStateRepository repository,
+        EventDeadLetterWriter deadLetterWriter,
+        double dlqProbability,
+        double silentDropProbability,
+        DoubleSupplier random
+    ) {
+        if (!Double.isFinite(dlqProbability) || dlqProbability < 0 || dlqProbability > 1) {
+            throw new IllegalArgumentException("dlqProbability must be between zero and one");
+        }
+        if (!Double.isFinite(silentDropProbability) || silentDropProbability < 0 || silentDropProbability > 1) {
+            throw new IllegalArgumentException("silentDropProbability must be between zero and one");
+        }
+        if (dlqProbability + silentDropProbability > 1) {
+            throw new IllegalArgumentException("dlqProbability + silentDropProbability must not exceed one");
         }
         this.repository = repository;
         this.deadLetterWriter = deadLetterWriter;
-        this.failureProbability = failureProbability;
+        this.dlqProbability = dlqProbability;
+        this.silentDropProbability = silentDropProbability;
         this.random = random;
     }
 
@@ -40,11 +59,24 @@ public final class EventConsumer {
             commitOffset.run();
             return Outcome.ALREADY_PROCESSED;
         }
-        if (random.getAsDouble() < failureProbability) {
+
+        // Single random draw for three-way selection
+        double randomValue = random.getAsDouble();
+
+        // DLQ failure: [0, dlqProbability)
+        if (randomValue < dlqProbability) {
             deadLetterWriter.publish(event, SIMULATED_FAILURE);
             commitOffset.run();
             return Outcome.DEAD_LETTERED;
         }
+
+        // Silent drop: [dlqProbability, dlqProbability + silentDropProbability)
+        if (randomValue < dlqProbability + silentDropProbability) {
+            commitOffset.run();
+            return Outcome.SILENTLY_DROPPED;
+        }
+
+        // Success: [dlqProbability + silentDropProbability, 1.0)
         boolean processed = repository.applyIfUnprocessed(event);
         commitOffset.run();
         return processed ? Outcome.PROCESSED : Outcome.ALREADY_PROCESSED;

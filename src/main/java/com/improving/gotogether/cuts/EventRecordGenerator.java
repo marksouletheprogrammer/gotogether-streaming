@@ -10,14 +10,25 @@ public final class EventRecordGenerator {
     private static final Instant START_TIME = Instant.parse("2026-03-04T10:15:00Z");
     private static final int TOOL_COUNT = 3;
 
-    public GenericRecord generate(int eventIndex) {
+    public GenericRecord generate(long eventIndex) {
         if (eventIndex < 1) {
             throw new IllegalArgumentException("eventIndex must be positive");
         }
 
-        int toolNumber = eventIndex <= TOOL_COUNT ? eventIndex : (eventIndex - TOOL_COUNT - 1) % TOOL_COUNT + 1;
+        // Determine tool number and event type
+        // First TOOL_COUNT events are installations (one per tool)
+        // Subsequent events cycle through tools as inspections
+        int toolNumber;
+        String eventType;
+        if (eventIndex <= TOOL_COUNT) {
+            toolNumber = (int) eventIndex;
+            eventType = "tool_installed";
+        } else {
+            toolNumber = (int) ((eventIndex - TOOL_COUNT - 1) % TOOL_COUNT) + 1;
+            eventType = "inspection";
+        }
+
         String toolInstanceId = "cutter-" + toolNumber;
-        String eventType = eventIndex <= TOOL_COUNT ? "tool_installed" : "inspection";
         Schema schema = EventSchemas.eventSchema();
         GenericRecord event = new GenericData.Record(schema);
         event.put("schema_version", "demo-1");

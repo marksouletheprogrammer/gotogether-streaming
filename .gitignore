@@ -9,4 +9,8 @@ __pycache__/
 **/.pyc
 *.pyc
 .pyc
+target
 target/
+target/*
+*.class
+**.class

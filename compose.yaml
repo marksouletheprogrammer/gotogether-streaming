@@ -253,8 +253,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       KAFKA_CLIENT_ID: mill-cuts-transactional-producer
       CUT_TOPIC: mill-cuts-transactional-source
-      CUT_RECORD_COUNT: "30"
-      CUT_INTERVAL_MS: "2000"
+      CUT_INTERVAL_MS: "200"
     volumes:
       - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
     depends_on: *cut-app-ready
@@ -270,8 +269,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       KAFKA_CLIENT_ID: mill-cuts-at-least-once-producer
       CUT_TOPIC: mill-cuts-replay-source
-      CUT_RECORD_COUNT: "30"
-      CUT_INTERVAL_MS: "2000"
+      CUT_INTERVAL_MS: "200"
     volumes:
       - ./monitoring/cut-app-jmx.yml:/etc/jmx/cut-app.yml:ro
     depends_on: *cut-app-ready
@@ -325,8 +323,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       KAFKA_CLIENT_ID: mill-tool-events-producer
       EVENT_TOPIC: mill-tool-events-source
-      EVENT_RECORD_COUNT: "30"
-      EVENT_INTERVAL_MS: "2000"
+      EVENT_INTERVAL_MS: "200"
       POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
       POSTGRES_USER: gotogether
     volumes:
@@ -347,6 +344,7 @@ services:
       EVENT_TOPIC: mill-tool-events-source
       EVENT_DLQ_TOPIC: mill-tool-events-dlq
       EVENT_FAILURE_PROBABILITY: "0.2"
+      EVENT_SILENT_DROP_PROBABILITY: "0.05"
       POSTGRES_JDBC_URL: jdbc:postgresql://postgres:5432/gotogether
       POSTGRES_USER: gotogether
     volumes:

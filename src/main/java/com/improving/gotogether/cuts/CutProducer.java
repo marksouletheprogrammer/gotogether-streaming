@@ -20,8 +20,7 @@ public final class CutProducer {
         String topic = requiredEnvironment("CUT_TOPIC");
         String clientId = requiredEnvironment("KAFKA_CLIENT_ID");
         String registryUrl = requiredEnvironment("SCHEMA_REGISTRY_URL");
-        int recordCount = positiveInteger("CUT_RECORD_COUNT", 30);
-        long intervalMillis = positiveLong("CUT_INTERVAL_MS", 2_000);
+        long intervalMillis = positiveLong("CUT_INTERVAL_MS", 200);
         String brokers = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "broker:29092");
         Properties properties = idempotent
             ? CutProducerConfig.transactionalProducer(brokers, clientId, registryUrl)
@@ -30,7 +29,15 @@ public final class CutProducer {
 
         try (CutMetrics metrics = CutMetrics.producer(clientId);
              KafkaProducer<String, GenericRecord> producer = new KafkaProducer<>(properties)) {
-            for (int cutIndex = 1; cutIndex <= recordCount; cutIndex++) {
+            // Register shutdown hook for orderly shutdown
+            Thread shutdownHook = new Thread(() -> {
+                LOGGER.info("Shutdown signal received, stopping cut producer");
+                Thread.currentThread().interrupt();
+            });
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+            // Continuous paced publishing until shutdown
+            for (long cutIndex = 1; !Thread.currentThread().isInterrupted(); cutIndex++) {
                 GenericRecord cut = generator.generate(cutIndex);
                 String eventId = cut.get("event_id").toString();
                 try {
@@ -39,7 +46,8 @@ public final class CutProducer {
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
                     metrics.recordSendFailure();
-                    throw new IllegalStateException("Interrupted while publishing cut " + eventId, exception);
+                    LOGGER.info("Cut producer interrupted");
+                    break;
                 } catch (ExecutionException exception) {
                     metrics.recordSendFailure();
                     throw new IllegalStateException("Could not publish cut " + eventId, exception.getCause());
@@ -48,13 +56,10 @@ public final class CutProducer {
                     throw exception;
                 }
                 LOGGER.info(() -> "Published " + eventId + " to " + topic);
-                if (cutIndex < recordCount) {
-                    sleep(intervalMillis);
-                }
+                sleep(intervalMillis);
             }
             producer.flush();
-            LOGGER.info(() -> "Finished publishing " + recordCount + " cuts to " + topic);
-            keepAliveUntilShutdown();
+            LOGGER.info("Cut producer finished");
         }
     }
 

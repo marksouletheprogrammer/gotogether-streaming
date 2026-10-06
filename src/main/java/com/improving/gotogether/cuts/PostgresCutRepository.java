@@ -17,7 +17,8 @@ public final class PostgresCutRepository implements CutRecordRepository {
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String TRANSACTIONAL_INSERT = "INSERT INTO mill_cuts_transactional_writes (event_id, payload) VALUES (?, ?::jsonb)";
+    private static final String TRANSACTIONAL_UPSERT = "INSERT INTO mill_cuts_transactional_writes (event_id, payload) VALUES (?, ?::jsonb) "
+        + "ON CONFLICT (event_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()";
     private static final String IDEMPOTENT_UPSERT = "INSERT INTO mill_cuts_idempotent_writes (event_id, payload) VALUES (?, ?::jsonb) "
         + "ON CONFLICT (event_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()";
 
@@ -30,7 +31,7 @@ public final class PostgresCutRepository implements CutRecordRepository {
         this.jdbcUrl = jdbcUrl;
         this.username = username;
         this.password = password;
-        sql = table == Table.IDEMPOTENT ? IDEMPOTENT_UPSERT : TRANSACTIONAL_INSERT;
+        sql = table == Table.IDEMPOTENT ? IDEMPOTENT_UPSERT : TRANSACTIONAL_UPSERT;
     }
 
     @Override

@@ -1,6 +1,6 @@
 # GoTogether Streaming Platform
 
-A local Docker Compose streaming demo for CNC cut data and technician events. The default stack starts Kafka in single-node KRaft mode, Schema Registry, PostgreSQL, three producers, three consumers, a lag/DLQ exporter, an event outcome exporter, AKHQ, Prometheus, and Grafana. The two cut producers each publish the same finite 30-record Avro series at a two-second interval; the event producer publishes its own low-rate event series. Producer and exporter processes remain available for metric scraping. The canonical sample topic remains empty.
+A local Docker Compose streaming demo for CNC cut data and technician events. The default stack starts Kafka in single-node KRaft mode, Schema Registry, PostgreSQL, three producers, three consumers, a lag/DLQ exporter, an event outcome exporter, AKHQ, Prometheus, and Grafana. The two cut producers each continuously publish the same unbounded Avro series at a 200-millisecond interval until shutdown; the event producer continuously publishes its own event series at the same rate. Both cut tables use identical schemas with `event_id` as the primary key, enforcing one row per ID. The event consumer supports configurable simulated DLQ failures (20% default) and silent drops (5% default) to demonstrate observability gaps. Producer and exporter processes remain available for metric scraping. The canonical sample topic remains empty.
 
 ## Requirements
 
@@ -40,6 +40,23 @@ The smoke check verifies service state and startup logs, Kafka metadata and topi
 
 Re-running `docker compose up -d --build` preserves existing volumes. Topic, schema, and table setup is repeatable and refuses conflicting schemas rather than replacing them. The cut and event producers use separate topics, so neither changes the empty `cnc-demo-records` topic.
 
+## Key Features
+
+### Continuous, matched cut producers
+Both cut producers run indefinitely at a configurable pacing interval (200 ms default), generating the same deterministic sequence of cuts indexed by completion. Each producer has its own source topic and consumer group, but both emit identical records for the same sequence index. Producers stop cleanly on shutdown without partial records.
+
+### Identical, replay-safe cut tables
+Both `mill_cuts_transactional_writes` and `mill_cuts_idempotent_writes` tables use the same schema: `event_id TEXT PRIMARY KEY`, `payload JSONB NOT NULL`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`. Both consumers upsert by `event_id`, guaranteeing one row per ID. The transactional consumer commits its database write before its Kafka transaction; the idempotent consumer commits its source offset only after the database write succeeds. Replays do not create duplicate rows.
+
+On first startup with retained volumes, the migration in `scripts/init_cuts.sql` converges the legacy transactional table schema to the new shape, collapsing duplicate `event_id` entries by latest `(ingested_at, id)` deterministically. The migration is idempotent: reruns do not corrupt data or repeat destructive transformations. **Back up both cut tables before upgrading an existing deployment.**
+
+### Simulated silent loss alongside DLQ failures
+The event consumer supports two independent, mutually exclusive simulated failure modes:
+- **DLQ failure** (20% default): publishes the original event to `mill-tool-events-dlq` with an error header, leaves the reconciliation row unprocessed, and commits the source offset.
+- **Silent drop** (5% default): commits the source offset without writing to the target, DLQ, or reconciliation row, leaving the event unprocessed and invisible to DLQ metrics.
+
+Both probabilities are configurable and must sum to ≤ 1. Set both to 0 for deterministic success. Silent drops demonstrate the observability gap between unreconciled event counts (which include them) and DLQ topic length (which does not).
+
 ## Pipelines
 
 ```text
@@ -61,7 +78,9 @@ The event producer commits one row to `mill_tool_event_reconciliation` before se
 
 On successful processing, the consumer updates the latest state for a `(machine_id, tool_instance_id)` and marks that event's reconciliation row processed in one PostgreSQL transaction. Kafka offset commits happen after that database transaction; Kafka and PostgreSQL do not share a distributed transaction. The target table's `updated_at` records the time the target was successfully updated.
 
-`EVENT_FAILURE_PROBABILITY` defaults to `0.2` and can be set to `0` for deterministic success checks or `1` for deterministic DLQ checks. An injected failure publishes the original Avro event to `mill-tool-events-dlq` with an `error` header before committing the source offset; it does not update the target or mark the reconciliation row processed. Inspect the DLQ topic and its error header in AKHQ. DLQ messages are not automatically replayed.
+`EVENT_FAILURE_PROBABILITY` defaults to `0.2` and can be set to `0` for deterministic success checks or `1` for deterministic DLQ checks. An injected DLQ failure publishes the original Avro event to `mill-tool-events-dlq` with an `error` header before committing the source offset; it does not update the target or mark the reconciliation row processed. Inspect the DLQ topic and its error header in AKHQ. DLQ messages are not automatically replayed.
+
+`EVENT_SILENT_DROP_PROBABILITY` defaults to `0.05` (5%) and can be set to `0` to disable silent drops. An injected silent drop commits the source offset without writing to the target, DLQ, or reconciliation row. The event remains unprocessed and invisible to DLQ metrics, but the unreconciled count includes it. This demonstrates the observability gap between reconciliation metrics (which count all unprocessed events) and DLQ metrics (which count only failed sends). Both probabilities must sum to ≤ 1.
 
 ### Metrics that matter
 
@@ -78,8 +97,8 @@ Metrics That Matter adds exactly three outcome panels: **Dead-letter topic lengt
 
 These metrics have separate sources and meanings:
 
-- `mill_tool_events_dlq_topic_length` is the retained record count from the Kafka DLQ topic, summed as latest offset minus earliest retained offset across its partitions. Duplicate DLQ records count separately, and Kafka retention can reduce the value.
-- `mill_tool_events_unreconciled` is a PostgreSQL count of reconciliation rows with `processed = false`. It includes failed sends and DLQ events; it is not calculated from Kafka offsets or DLQ length.
+- `mill_tool_events_dlq_topic_length` is the retained record count from the Kafka DLQ topic, summed as latest offset minus earliest retained offset across its partitions. Duplicate DLQ records count separately, and Kafka retention can reduce the value. **Silent drops do not appear in this metric.**
+- `mill_tool_events_unreconciled` is a PostgreSQL count of reconciliation rows with `processed = false`. It includes failed sends, DLQ events, and silently dropped events; it is not calculated from Kafka offsets or DLQ length. **Silently dropped events increase this count without increasing the DLQ topic length**, demonstrating the observability gap.
 - `mill_tool_events_average_staleness_seconds` is the average of `now - updated_at` over the current target row for each unique tool instance. With no target rows, Grafana shows no data rather than zero.
 
 Kafka DLQ collection and PostgreSQL outcome collection each expose their own health metric, so an unavailable source is not presented as a healthy zero. The provisioned dashboard files are `base-streaming-platform.json` and `metrics-that-matter.json`; the latter is derived from the former with `python3 scripts/derive_metrics_that_matter_dashboard.py --check` verifying panel parity.
@@ -128,6 +147,46 @@ docker compose exec postgres psql --username gotogether --dbname gotogether \
 docker compose exec postgres psql --username gotogether --dbname gotogether \
   --command 'SELECT machine_id, tool_instance_id, event_id, updated_at FROM mill_tool_event_state ORDER BY machine_id, tool_instance_id;'
 ```
+
+## Migration and backup
+
+When upgrading from a previous version with retained PostgreSQL volumes, the cut table schema migration runs automatically during `docker compose up`. The migration is idempotent and deterministic:
+
+1. **Before upgrading**, back up both cut tables:
+   ```sh
+   docker compose exec postgres pg_dump --username gotogether --dbname gotogether \
+     --table mill_cuts_transactional_writes --table mill_cuts_idempotent_writes \
+     > cut_tables_backup.sql
+   ```
+
+2. **Stop the running stack** (do not delete volumes):
+   ```sh
+   docker compose down
+   ```
+
+3. **Pull the new code and start the stack**:
+   ```sh
+   docker compose up -d --build
+   docker compose ps -a
+   python scripts/smoke_check.py
+   ```
+
+4. **Verify the migration**:
+   ```sh
+   docker compose exec postgres psql --username gotogether --dbname gotogether \
+     --command 'SELECT COUNT(*), COUNT(DISTINCT event_id) FROM mill_cuts_transactional_writes;'
+   docker compose exec postgres psql --username gotogether --dbname gotogether \
+     --command 'SELECT COUNT(*), COUNT(DISTINCT event_id) FROM mill_cuts_idempotent_writes;'
+   ```
+   Both tables should have the same number of rows and unique `event_id` values. If the transactional table had duplicates before migration, the row count decreases to one per `event_id`.
+
+5. **To roll back**, stop the stack, restore the backup, and revert the code:
+   ```sh
+   docker compose down
+   docker compose exec postgres psql --username gotogether --dbname gotogether < cut_tables_backup.sql
+   # Revert to the previous code version
+   docker compose up -d --build
+   ```
 
 ## Stop and reset
 

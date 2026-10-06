@@ -27,11 +27,12 @@ public final class EventConsumerService {
     public static void runFromEnvironment() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> RUNNING.set(false)));
         String groupId = requiredEnvironment("CONSUMER_GROUP_ID");
-        double failureProbability = probability("EVENT_FAILURE_PROBABILITY", 0.2);
+        double dlqProbability = probability("EVENT_FAILURE_PROBABILITY", 0.2);
+        double silentDropProbability = probability("EVENT_SILENT_DROP_PROBABILITY", 0.05);
         try (EventMetrics metrics = EventMetrics.consumer(groupId)) {
             while (RUNNING.get()) {
                 try {
-                    runConsumerIteration(metrics, failureProbability);
+                    runConsumerIteration(metrics, dlqProbability, silentDropProbability);
                 } catch (RuntimeException exception) {
                     metrics.recordProcessingFailure();
                     if (RUNNING.get()) {
@@ -43,7 +44,7 @@ public final class EventConsumerService {
         }
     }
 
-    private static void runConsumerIteration(EventMetrics metrics, double failureProbability) {
+    private static void runConsumerIteration(EventMetrics metrics, double dlqProbability, double silentDropProbability) {
         String topic = requiredEnvironment("EVENT_TOPIC");
         String deadLetterTopic = requiredEnvironment("EVENT_DLQ_TOPIC");
         String consumerGroup = requiredEnvironment("CONSUMER_GROUP_ID");
@@ -72,7 +73,8 @@ public final class EventConsumerService {
             EventConsumer processor = new EventConsumer(
                 repository,
                 deadLetterWriter,
-                failureProbability,
+                dlqProbability,
+                silentDropProbability,
                 () -> ThreadLocalRandom.current().nextDouble()
             );
             consumer.subscribe(List.of(topic));
@@ -87,6 +89,8 @@ public final class EventConsumerService {
                     if (outcome == EventConsumer.Outcome.DEAD_LETTERED) {
                         metrics.recordProcessingFailure();
                         LOGGER.info(() -> "Dead-lettered " + record.key() + " from " + topic);
+                    } else if (outcome == EventConsumer.Outcome.SILENTLY_DROPPED) {
+                        LOGGER.info(() -> "Silently dropped " + record.key() + " from " + topic);
                     } else {
                         LOGGER.info(() -> "Applied " + record.key() + " from " + topic);
                     }
