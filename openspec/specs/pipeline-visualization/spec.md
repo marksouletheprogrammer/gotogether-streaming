@@ -30,7 +30,7 @@ The topology shown by StreamLens SHALL include, for every pipeline in the projec
 #### Scenario: Cut pipelines visible
 - **GIVEN** the stack is running and the cut producers have sent records
 - **WHEN** the user views the cluster topology
-- **THEN** `mill-cuts-transactional-producer` connects to `mill-cuts-transactional-source` and on to consumer group `mill-cuts-transactional-consumer`, and `mill-cuts-at-least-once-producer` connects to `mill-cuts-replay-source` and on to consumer group `mill-cuts-idempotent-consumer`
+- **THEN** `mill-cuts-transactional-producer` connects to `mill-cuts-transactional-source` and on to consumer group `mill-cuts-transactional-consumer`, and `mill-cuts-at-least-once-producer` connects to `mill-cuts-atleastonce-source` and on to consumer group `mill-cuts-idempotent-consumer`
 
 #### Scenario: Event pipeline visible
 - **GIVEN** the stack is running and the event producer has sent records

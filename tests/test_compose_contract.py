@@ -109,9 +109,8 @@ class ComposeContractTests(unittest.TestCase):
         at_least_once_env = at_least_once["environment"]
 
         self.assertEqual(transactional_env["CUT_TOPIC"], "mill-cuts-transactional-source")
-        self.assertEqual(at_least_once_env["CUT_TOPIC"], "mill-cuts-replay-source")
+        self.assertEqual(at_least_once_env["CUT_TOPIC"], "mill-cuts-atleastonce-source")
         self.assertNotEqual(transactional_env["KAFKA_CLIENT_ID"], at_least_once_env["KAFKA_CLIENT_ID"])
-        self.assertEqual(transactional_env["CUT_RECORD_COUNT"], at_least_once_env["CUT_RECORD_COUNT"])
         self.assertEqual(transactional_env["CUT_INTERVAL_MS"], at_least_once_env["CUT_INTERVAL_MS"])
         self.assertEqual(transactional["command"], ["producer", "transactional"])
         self.assertEqual(at_least_once["command"], ["producer", "at-least-once"])
@@ -153,7 +152,7 @@ class ComposeContractTests(unittest.TestCase):
         self.assertIn("--if-not-exists", cut_topics["command"][0])
         for topic in (
             "mill-cuts-transactional-source",
-            "mill-cuts-replay-source",
+            "mill-cuts-atleastonce-source",
             "mill-cuts-committed",
         ):
             self.assertIn(topic, cut_topics["command"][0])

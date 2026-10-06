@@ -35,7 +35,7 @@ public final class ConsumerLagExporter {
     private static final String DLQ_TOPIC = "mill-tool-events-dlq";
     static final List<LagTarget> TARGETS = List.of(
         new LagTarget("mill-cuts-transactional-consumer", "mill-cuts-transactional-source"),
-        new LagTarget("mill-cuts-idempotent-consumer", "mill-cuts-replay-source"),
+        new LagTarget("mill-cuts-idempotent-consumer", "mill-cuts-atleastonce-source"),
         new LagTarget("mill-tool-events-consumer", "mill-tool-events-source")
     );
 

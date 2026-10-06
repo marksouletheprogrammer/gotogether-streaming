@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 CUT_TOPICS = (
     "mill-cuts-transactional-source",
-    "mill-cuts-replay-source",
+    "mill-cuts-atleastonce-source",
     "mill-cuts-committed",
 )
 CUT_SUBJECTS = tuple(f"{topic}-value" for topic in CUT_TOPICS)

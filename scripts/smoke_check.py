@@ -36,7 +36,7 @@ PROMETHEUS_JOBS = (
 )
 CUT_TOPICS = (
     "mill-cuts-transactional-source",
-    "mill-cuts-replay-source",
+    "mill-cuts-atleastonce-source",
     "mill-cuts-committed",
 )
 EVENT_TOPICS = ("mill-tool-events-source", "mill-tool-events-dlq")

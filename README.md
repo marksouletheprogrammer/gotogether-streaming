@@ -62,7 +62,7 @@ Both probabilities are configurable and must sum to ≤ 1. Set both to 0 for det
 ```text
 Transactional cut producer -> mill-cuts-transactional-source -> transactional cut consumer -> mill_cuts_transactional_writes
                                                                     +-> mill-cuts-committed
-At-least-once cut producer -> mill-cuts-replay-source -> idempotent cut consumer -> mill_cuts_idempotent_writes
+At-least-once cut producer -> mill-cuts-atleastonce-source -> idempotent cut consumer -> mill_cuts_idempotent_writes
 Technician-event producer -> mill-tool-events-source -> mill-tool-events-consumer -> mill_tool_event_state
                                                                                      +-> mill-tool-events-dlq
 ```
@@ -119,7 +119,7 @@ StreamLens runs at `http://localhost:5000` as part of the default stack. The top
 
 1. Open `http://localhost:5000`.
 2. The `local` cluster is already listed and connected to the broker, Schema Registry, and Prometheus. Open it — no manual registration is needed.
-3. In the topology view, expect producer nodes `mill-cuts-transactional-producer`, `mill-cuts-at-least-once-producer`, and `mill-tool-events-producer` with edges to their source topics (`mill-cuts-transactional-source`, `mill-cuts-replay-source`, `mill-tool-events-source`), then on to consumer groups `mill-cuts-transactional-consumer`, `mill-cuts-idempotent-consumer`, and `mill-tool-events-consumer`.
+3. In the topology view, expect producer nodes `mill-cuts-transactional-producer`, `mill-cuts-at-least-once-producer`, and `mill-tool-events-producer` with edges to their source topics (`mill-cuts-transactional-source`, `mill-cuts-atleastonce-source`, `mill-tool-events-source`), then on to consumer groups `mill-cuts-transactional-consumer`, `mill-cuts-idempotent-consumer`, and `mill-tool-events-consumer`.
 4. Also expect schema nodes attached to the topics whose values use them, the `mill-cuts-committed` topic written by the transactional consumer, and the `mill-tool-events-dlq` topic.
 
 Producers are detected from the `kafka_producer_topic_metrics_record_send_total` Prometheus series exported by the app JMX agent, so a producer appears once it has sent at least one record and stays listed while its process runs. StreamLens is read-only against Kafka: producing from its UI is disabled.

@@ -25,7 +25,7 @@ class ConsumerLagExporterTest {
             new ConsumerLagExporter.LagTarget("mill-tool-events-consumer", "mill-tool-events-source")
         ));
         assertTrue(ConsumerLagExporter.TARGETS.contains(
-            new ConsumerLagExporter.LagTarget("mill-cuts-idempotent-consumer", "mill-cuts-replay-source")
+            new ConsumerLagExporter.LagTarget("mill-cuts-idempotent-consumer", "mill-cuts-atleastonce-source")
         ));
     }
 
@@ -44,7 +44,7 @@ class ConsumerLagExporterTest {
     @Test
     void dlqCollectionFailureDoesNotHideHealthyLagOrReportFalseZero() {
         String metrics = ConsumerLagExporter.renderMetrics(
-            List.of(new ConsumerLagExporter.LagSample("mill-cuts-idempotent-consumer", "mill-cuts-replay-source", 0, 5)),
+            List.of(new ConsumerLagExporter.LagSample("mill-cuts-idempotent-consumer", "mill-cuts-atleastonce-source", 0, 5)),
             true,
             null,
             false
